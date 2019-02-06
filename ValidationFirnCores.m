@@ -1,7 +1,10 @@
 %% ======================== RetMIP ================================
 % Script that compares modelled and observed firn density
-% Work in progress...
-% Contact me if any question: b.vandecrux@gmail.com
+% At the moment it only processes the output from GEUS at KAN-U. It should
+% take much to expend it to all the other models/sites.
+%
+% Baptiste Vandecrux
+% b.vandecrux@gmail.com
 % =================================================================
 
 clear all
@@ -20,7 +23,8 @@ set(0,'defaultfigurepapersize',[29.7 16]);
 
 % make sure you have the following folder in your path
 % it contains all the matlab functions needed for the analysis
-addpath(genpath('..\lib'))
+addpath(genpath('.\lib'))
+addpath(genpath('.\Data'))
 
 load Core_RetMIP.mat
 % the Core structure contains a lot of info about each core. Check it out!
@@ -30,9 +34,8 @@ CoreList(Core)
 
 % Consider looping on station names or on filenames
 station = 'KAN-U';
-filename = 'C:\Users\bava\Dropbox\Phd\Data release\RetMIP\Output example\KAN-U\RetMIP_GEUS_KAN-U_3hourly_columns.nc';
-OutputFolder = './Plots';
-mkdir(OutputFolder)
+filename = 'RetMIP_GEUS_KAN-U_3hourly_columns.nc';
+OutputFolder = './Output';
 
 vis = 'on'; % if 'off' figure will be generated and saved but not displayed 
 
@@ -102,7 +105,7 @@ for ii = i_core
         if strcmp(vis,'off')
             close(f);
         end
-        f = figure('Visible',vis);
+        f = figure('Visible',vis,'outerposition',[1 1 25 15]);
         [ha, ~] = tight_subplot(1, num_plot, 0.03, [0.12 0.2], [0.08 0.01]);
         count = 1;
         set(f,'CurrentAxes',ha(count))
