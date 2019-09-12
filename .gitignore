@@ -1,4 +1,9 @@
 Data/Core_RetMIP.mat
+Data/UpGPR/*
 Analysis/Plots
 Analysis/Save
-
+Analysis/.Rproj.user
+.RData
+.RHistory
+*.html
+*.Rproj
