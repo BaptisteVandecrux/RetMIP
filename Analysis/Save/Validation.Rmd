@@ -1,0 +1,230 @@
+---
+title: "R Notebook"
+output: html_notebook
+output:
+  html_document:
+    highlight: textmate
+    theme: spacelab
+    toc: yes
+  pdf_document:
+    toc: yes
+  html_notebook:
+    toc: yes
+  word_document:
+    toc: yes
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ncdf4)
+library(ggplot2)
+library(reshape)
+library(functional)
+library(pracma)
+library(dplyr)
+library(lubridate)
+library(gridExtra)
+library(grid)
+
+path_model<-'C:/Users/bav/OneDrive - Geological survey of Denmark and Greenland/Data/RetMIP/Model outputs/'
+sites<-list('KANU','Dye-2_long','Dye-2_16','Summit','FA')
+models <- list('CFM-Cr','CFM-KM','DTU','DMIHH','GEUS','IMAUFDM','MeyerHewitt','UppsalaUniBucket','UppsalaUniDeepPerc')
+start_time <- c("01-May-2012 00:00:00","01-Jun-1998 00:00:00","02-May-2016 00:00:00","02-Jul-2000 00:00:00","12-Apr-2014 00:00:00")
+end_time <- c("31-Dec-2016 06:00:00","02-May-2015 15:00:00","28-Oct-2016 09:00:00","08-Mar-2015 12:00:00","02-Dec-2014 21:00:00")
+```
+
+This document contains the scripts and plots for the RetMIP project (http://retain.geus.dk/index.php/retmip/).
+
+
+
+```{r multiplot 1D}
+# ==== Plotting 1D ====
+
+water_balance <- function (i_site,  multipl_fact){
+  
+  if(missing(multipl_fact)) { multipl_fact<-1 }
+
+data_surf <- read.csv(paste0("C:/Users/bav/OneDrive - Geological survey of Denmark and Greenland/Data/RetMIP/Input files/surface/RetMIP_", sites[i_site], ".csv"),header=TRUE,sep=";")
+data_surf$date <- lubridate::parse_date_time(data_surf$time, orders = "d-b-Y H:M:S", locale = "us")
+
+  if (i_site == 5) {data_surf$melt_mmweq[1] <- 1791.91}
+
+# Plotting
+
+  pList <- lapply(1:length(models), function(i_mod){ 
+    file_name_val <- paste('RetMIP_',models[i_mod],'_',sites[i_site],'_3hourly_values.nc',sep = "")
+    path_file_val <- paste(path_model,models[i_mod],'/',file_name_val,sep = "")
+    # print(file_name_val)
+    file_nc_val<- nc_open(path_file_val)
+  
+    
+  # extracting variable
+  rfrz_mod   <- ncvar_get(file_nc_val, varid = "trfrz")
+  var_name <- "trfrz"
+  #Remove NA values
+  rfrz_mod <- rfrz_mod[!is.na(rfrz_mod)]
+  
+  rfrz_mod <- rfrz_mod*multipl_fact
+  
+    if (models[i_mod] %in% c("CFM-Cr","CFM-KM","GEUS")) {rfrz_mod <- rfrz_mod * 1000  }
+    if (strcmp(models[[i_mod]],"IMAUFDM")) {
+  rfrz_mod <- pmax(rfrz_mod,0)}
+  
+  # time harmonization
+  time1<-1:length(rfrz_mod)
+    
+  date_mod<-seq(lubridate::dmy_hms(start_time[i_site]),
+                  lubridate::dmy_hms(end_time[i_site]),
+                  3600*3)
+    
+  if (length(date_mod)<length(time1)) {
+  rfrz_mod<-rfrz_mod[- (1:(length(time1)-length(date_mod)))]
+  time1  <- time1[- (1:(length(time1)-length(date_mod)))]}
+  
+  
+  while (length(date_mod)>length(time1)) {
+  rfrz_mod <- append(rfrz_mod, NaN*rfrz_mod[length(time1)-1])
+  time1 <- append(time1, time1[length(time1)]+3600*3)}
+  
+    # extracting variable
+  runoff_mod   <- ncvar_get(file_nc_val, varid = "trunoff")
+  var_name <- "trunoff"
+
+  #Remove NA values
+  runoff_mod <- runoff_mod[!is.na(runoff_mod)]
+  
+  runoff_mod <- runoff_mod*multipl_fact
+  if (i_site %in% 1:4 & models[i_mod] == "GEUS") {runoff_mod <- runoff_mod * 1000  }
+  
+  # if (i_site %in% c(5)){ if (models[i_mod] %in% c("GEUS")) {runoff_mod <- runoff_mod / 1000  }}
+  
+    if (models[i_mod] %in% c("CFM-Cr","CFM-KM")) {runoff_mod <- runoff_mod * 1000  }
+    if (strcmp(models[[i_mod]],"IMAUFDM")) {  runoff_mod <- pmax(runoff_mod,0)}
+  
+  # time harmonization
+  time1<-1:length(runoff_mod)
+    
+  date_mod<-seq(lubridate::dmy_hms(start_time[i_site]),
+                  lubridate::dmy_hms(end_time[i_site]),
+                  3600*3)
+    
+  if (length(date_mod)<length(time1)) {
+  runoff_mod<-runoff_mod[- (1:(length(time1)-length(date_mod)))]
+  time1  <- time1[- (1:(length(time1)-length(date_mod)))]}
+  
+  
+  while (length(date_mod)>length(time1)) {
+  runoff_mod <- append(runoff_mod, NaN*runoff_mod[length(time1)-1])
+  time1 <- append(time1, time1[length(time1)]+3600*3)}
+  
+   # extracting variable
+  lwc_mod   <- ncvar_get(file_nc_val, varid = "tlwc")
+  var_name <- "tlwc"
+
+  #Remove NA values
+  lwc_mod <- lwc_mod[!is.na(lwc_mod)]
+  
+  lwc_mod <- lwc_mod*multipl_fact
+  
+    if (models[i_mod] %in% c("CFM-Cr","CFM-KM")) {lwc_mod <- lwc_mod * 1000  }
+
+    if (strcmp(models[[i_mod]],"IMAUFDM")) {  lwc_mod <- pmax(lwc_mod,0)}
+  
+  # time harmonization
+  time1<-1:length(lwc_mod)
+    
+  date_mod<-seq(lubridate::dmy_hms(start_time[i_site]),
+                  lubridate::dmy_hms(end_time[i_site]),
+                  3600*3)
+    
+  if (length(date_mod)<length(time1)) {
+  lwc_mod<-lwc_mod[- (1:(length(time1)-length(date_mod)))]
+  time1  <- time1[- (1:(length(time1)-length(date_mod)))]}
+  
+  
+  while (length(date_mod)>length(time1)) {
+  lwc_mod <- append(lwc_mod, NaN*lwc_mod[length(time1)-1])
+  time1 <- append(time1, time1[length(time1)]+3600*3)}
+  
+  # closing nc file
+  nc_close(file_nc_val)
+
+  year_list <- unique(year(date_mod))
+  
+  df <- data.frame(date_mod,month(date_mod), year(date_mod),
+                   cumsum(data_surf$melt_mmweq), cumsum(rfrz_mod),
+                   cumsum(runoff_mod),(lwc_mod),
+                   cumsum(rfrz_mod)+cumsum(runoff_mod)+lwc_mod)
+  colnames(df) <- c("date","month", "year", "melt", "rfrz", "runoff","lwc","sum_rr")
+  
+  df_m <- melt(df,id.vars = c(1,2,3))
+  
+  set_lim <- c(0,max(df_m$value,na.rm = TRUE)*1.1)
+
+    # --- plotting ----
+    p <- ggplot() + geom_line(data=df_m,
+                aes(x = date, 
+                    y = value,
+                    color=variable,
+                    linetype=variable,
+                    size = variable))+
+      scale_linetype_manual(values = c(1,1,1,1,3)) +
+      scale_size_manual(values = 0.75*c(1,1,1,1,2)) +
+      labs(x = "", y = "",fill="")+
+      scale_y_continuous(limits=set_lim,  expand=c(0.02,0.01))+
+      annotate('text', 
+               x = as.POSIXct(paste(year_list[1],"-05-03",sep="")),
+               y = 0.9*set_lim[2], 
+               label = models[i_mod],
+               hjust=0)+
+      theme(axis.text.x = if (i_mod %in% c(7, 8,9)) {element_text(angle=90)} else {element_blank()},
+            axis.title.x = element_blank(),
+            axis.title.y = element_blank(),
+            panel.background = element_blank(),
+            axis.line = element_line(colour = "black"),
+            panel.border = element_rect(colour = "black", fill=NA, size=1),
+            legend.position = if (i_mod==3){c(1.05,0.5)} else {"none"},
+            legend.justification = c(0,1),
+            legend.key=element_rect(colour=NA,fill=NA))
+  })
+  
+ h_final<- grid.arrange(grobs=pList, 
+               ncol=3,
+               top=sites[[i_site]], 
+               left= " (mm w.eq.)",
+               bottom="Date",
+               vp=viewport(x=0, just="left", width=0.7, height=1))
+ 
+ ggsave(filename=paste0("Plots/",sites[[i_site]],"_waterbalance.jpg"),
+             plot=h_final, device = "jpeg")
+}
+
+```
+
+```{r KANU}
+water_balance(i_site=1,  multipl_fact=1)
+
+```
+
+```{r Dye-2_long}
+water_balance(i_site=2,  multipl_fact=1)
+
+```
+
+```{r Dye_2_16}
+water_balance(i_site=3,  multipl_fact=1)
+
+```
+
+```{r Summit}
+water_balance(i_site=4,  multipl_fact=1)
+
+```
+
+```{r FA}
+water_balance(i_site=5,  multipl_fact=1)
+
+```
+
+
