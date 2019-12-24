@@ -1,0 +1,440 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    highlight: textmate
+    theme: spacelab
+    toc: yes
+  pdf_document:
+    toc: yes
+  html_notebook:
+    toc: yes
+  word_document:
+    toc: yes
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(plotly)
+library(akima)
+library(ncdf4)
+library(ggplot2)
+library(reshape)
+library(functional)
+library(pracma)
+library(dplyr)
+library(lubridate)
+library(gridExtra)
+library(grid)
+library(fields)
+
+Sys.setenv("plotly_username"="BaptisteV")
+Sys.setenv("plotly_api_key"="7U99HT4nSOGDBKwUveT6")
+
+path_model<-'C:/Users/bav/OneDrive - Geological survey of Denmark and Greenland/Data/RetMIP/Model outputs/'
+sites<-list('KANU','Dye-2_long','Dye-2_16','Summit','FA')
+models <- list('CFM-Cr','CFM-KM','DTU','DMIHH','GEUS','IMAUFDM','MeyerHewitt','UppsalaUniBucket','UppsalaUniDeepPerc')
+start_time <- c("01-May-2012 00:00:00","01-Jun-1998 00:00:00","02-May-2016 00:00:00","02-Jul-2000 00:00:00","12-Apr-2014 00:00:00")
+end_time <- c("31-Dec-2016 06:00:00","02-May-2015 15:00:00","28-Oct-2016 09:00:00","08-Mar-2015 12:00:00","02-Dec-2014 21:00:00")
+
+
+
+Time2Posix <- function (orig_time,  time_in, timez='UTC'){
+  	days = time_in - as.numeric( as.Date("1970-01-01")  - as.Date(orig_time))
+  	# - 719529 	# 719529 = days from 1-1-0000 to 1-1-1970
+	  secs = days * 86400 # 86400 seconds in a day
+	return(as.POSIXct(strftime(
+	  as.POSIXct(secs, origin = "1970-01-01", 
+			tz = 'UTC'), format = '%Y-%m-%d %H:%M', 
+			tz = 'UTC', usetz = FALSE), tz = timez))
+}
+
+```
+
+This document contains the scripts and plots for the RetMIP project (http://retain.geus.dk/index.php/retmip/).
+
+```{r Subsurface temperature}
+extract_data_therm <- function (i_site){
+  if(i_site==1) { name_file<-'KANU_PROMICE' }
+  if(i_site==2) { name_file<-'DYE-2_long' }
+  if(i_site==3) { name_file<-'DYE-2_16' }
+  if(i_site==4) { name_file<-'Summit' }
+  if(i_site==5) { name_file<-'FA' }
+  if(i_site==6) { name_file<-'KANU_SPLAZ_main' }
+  if(i_site==7) { name_file<-'KANU_SPLAZ_2' }
+  if(i_site==7) { name_file<-'KANU_SPLAZ_3' }
+
+  path_file <- paste0('../Data/Firn temperature/T_firn_',name_file,'.nc')
+  file_nc<- nc_open(path_file)
+  
+  if(i_site==2 || i_site==4) { 
+      depth <-    ncvar_get(file_nc, varid='Depth')
+      T_firn <-    ncvar_get(file_nc, varid='Firn temperature')
+      time <-    ncvar_get(file_nc, varid='time')
+      } else {
+      depth <-    ncvar_get(file_nc, varid='depth')
+      T_firn <-    ncvar_get(file_nc, varid='Firn temperature')
+      time <-    ncvar_get(file_nc, varid='time')
+      }
+
+
+  time <- Time2Posix("1900-01-01",  time)
+  time_ind<-1:length(time)
+  TT <- repmat(time_ind,size(T_firn)[1],1)
+  
+  therm_num <- repmat(matrix(1:size(T_firn)[1],nrow=size(T_firn)[1]),1,length(time_ind))
+  
+  length_out <-200
+  depth_reduced <- depth[,seq(0, length(time_ind), length.out = length_out)]
+  dat <- t(rbind(as.vector(TT[,seq(0, length(time_ind), length.out = length_out)]),
+         as.vector(depth_reduced),
+         as.vector(T_firn[,seq(0, length(time_ind), length.out = length_out)]),
+         as.vector(therm_num[,seq(0, length(time_ind), length.out = length_out)])))
+  dat <- as.data.frame(dat)
+  colnames(dat) <- c('x','y','z','therm_num')
+  dat <- dat[!is.na(dat$z),]
+  dat <- dat[!(dat$y<=0),]
+  dat_dup <- dat [duplicated(dat[c(1,2)]),]
+  dat <- dat [!duplicated(dat[c(1,2)]),]
+
+  
+  df <- interp(dat$x, dat$y, dat$z,
+              nx=length(seq(0, length(time_ind), length.out = length_out)),
+              ny=50,linear = TRUE, extrap = FALSE)
+  df$z <- t(df$z)
+  
+  # removing unwanted interpolation
+  for (i in 1:dim(depth_reduced)[2]) {
+    ind_bad <- df$y < min(depth_reduced[,i])
+    df$z[ind_bad,i] = NA
+    ind_bad <- df$y > max(depth_reduced[,i])
+    df$z[ind_bad,i] = NA
+  }
+  
+  return(list(dat,name_file, df, time))
+}
+
+extract_model_data <- function (i_mod,var_name,clab_text,i_site,set_lim,offset,multipl_fact){
+  if(missing(offset)) {
+    offset<-0
+  }
+  if(missing(multipl_fact)) {
+    multipl_fact<-1
+  }
+  # === Loading data ===
+    file_name_col <- paste('RetMIP_',models[i_mod],'_',sites[i_site],'_3hourly_columns.nc',sep = "")
+    path_file_col<-paste(path_model,models[i_mod],'/',file_name_col,sep = "")
+    
+    # loading column data
+    file_nc_col<- nc_open(path_file_col)
+    var_mod <- ncvar_get(file_nc_col, varid=var_name)
+    var_mod <- var_mod + offset
+    var_mod <- var_mod *multipl_fact
+    
+    if (i_mod == 6)
+      {var_mod <- var_mod[!is.na(var_mod[,1]),]}
+    # if (i_mod == 5 & var_name == "temp")
+    # {var_mod <- var_mod +273}
+    
+    if (i_mod == 5 & var_name == "lwc")
+      { var_mod<- pmax(var_mod,0)}
+    # {var_mod <- var_mod +273}
+    
+    if (i_mod %in% 1:3 & var_name == "lwc")
+      { var_mod<- var_mod*1000}
+    
+    if (dim(var_mod)[1]>dim(var_mod)[2]) var_mod <- t(var_mod)
+    
+    time1<-1:dim(var_mod)[2]
+    
+    date_mod<-seq(lubridate::dmy_hms(start_time[i_site]),
+      lubridate::dmy_hms(end_time[i_site]),
+      3600*3)
+    
+    if (length(date_mod)<length(time1)) {
+      var_mod<-var_mod[,- (1:(length(time1)-length(date_mod)))]
+      time1  <- time1[- (1:(length(time1)-length(date_mod)))]}
+    
+    if (length(date_mod)>length(time1)) {
+      print(length(date_mod))
+      print(length(time1))
+      # print(date_mod[length(date_mod)])
+      time <- ncvar_get(file_nc_col, varid='time')
+      time<- time*3600*24 + as.POSIXct("1900-01-01")
+      # print(time[1])
+      # print(length(time))
+      # print(time[length(time)])
+    }
+    while (length(date_mod)>length(time1)) {
+      time1 <- append(time1, time1[length(time1)]+3600*3)
+      var_mod <- cbind(var_mod, var_mod[,length(time1)-1])}
+    # some filtering
+    # var_mod<-var_mod[apply(var_mod, 1, Compose(is.finite, all)),]
+    # rearranging in xyz array
+    ind_select<-seq(1,dim(var_mod)[2],max(1,floor(dim(var_mod)[2]/1000)))
+    time_select <- date_mod[ind_select]
+    var_mod<-var_mod[,ind_select]
+  return(list(time_select, var_mod))
+}
+```
+
+
+```{r }
+
+plot_scatter_therm <- function(i_mod, i_site_in) {
+  # Loading model data
+  list_out =   extract_model_data(i_mod = i_mod,var_name="temp",
+                                  clab_text='Temperature (deg C)',i_site=i_site_in,
+                                  set_lim=c(-40,0),offset=-273)
+  time_mod =list_out[[1]]
+  T_mod = list_out[[2]]
+
+
+  #loading observations
+  list_out <- extract_data_therm(i_site_in)
+  dat_obs = list_out[[1]]
+  name_file_obs = list_out[[2]]
+  df_obs = list_out[[3]]
+  time_obs = list_out[[4]]
+
+  # finding closest model cell to observation
+  nn_index <- function(V1,V2) {
+    ind_nn <- 1:dim(V1)[1]*NA
+    for (i in 1:dim(V1)[1]){
+      ind_nn [i] <- which.min(sqrt((V1[i,1] - V2[,1])^2 + (V1[i,2] - V2[,2])^2))
+    }
+    return(ind_nn)
+  }
+  
+  # T_mod=T_mod[c(1,10, 30, 50, 70),]
+    
+  depth_mod <- t(repmat(t((1:200)/10),size(T_mod)[2],1))
+
+  time_ind = repmat( 1:length(time_mod), size(T_mod)[1], 1)
+  dim(time_ind) <- NULL
+
+  time_mod_flat = time_mod[time_ind]
+  T_mod_flat = T_mod
+  depth_mod_flat <- depth_mod
+  
+  dim(depth_mod_flat) <- NULL
+  dim(T_mod_flat) <- NULL
+
+
+  V1 = cbind(time_obs[dat_obs$x]  ,dat_obs$y)
+  V2 = cbind((time_mod_flat), (depth_mod_flat))
+  
+  ind <- nn_index(V1,V2)
+  
+  T_nn_mod <- T_mod_flat[ind]
+  depth_nn_mod <- depth_mod_flat[ind]
+  time_nn_mod <- time_mod_flat[ind]
+  
+  ME <- mean(T_nn_mod - dat_obs$z)
+  RMSE <- sqrt(mean((T_nn_mod - dat_obs$z)^2))
+  R2 <-  cor(T_nn_mod, dat_obs$z) ^ 2
+
+  
+  write(paste(sites[i_site_in], models[i_mod], RMSE,ME,R2,sep=";"),file="StatTherm.csv",append=TRUE)
+  
+  show_box <- list(showline = TRUE,
+      mirror = "ticks",
+      linecolor = toRGB("black"),
+      linewidth = 2)
+  
+  p <- plot_ly(x = dat_obs$z) %>%
+     layout(xaxis = c(list(title = "Observed temperature (°C)",
+                          range=c(-40,0)),
+                          show_box),
+           yaxis = c(list (title = "Modelled temperature (°C)", 
+                         range=c(-40,0)),
+                     show_box),
+           showlegend = FALSE,
+           title = sites[[i_site_in]])
+  pal <- c("red", "blue", "green")
+  p <- p %>% add_trace( x = dat_obs$z,
+                        y = T_nn_mod,
+                       type = 'scatter',
+                       mode = 'markers',
+                       marker = list(size = 4,
+                                     cauto = F,
+                                     cmin = 0,
+                                     cmax=16,
+                                     symbol = dat_obs$therm_num,
+                                    symbols = c('circle','square','diamond','star',
+                                                'hourglass','hexagone','bowtie','triangle'),
+                                    color = depth_nn_mod,
+                                    colorbar = list(title = list(text = "Depth (m)",
+                                                                 side = "right"),
+                                                    len=1),
+                                    colorscale = "Rainbow")
+                      )
+  p <- p %>% add_trace( x = c(-40,0), y = c(-40,0), type = 'scatter',
+        mode = 'line', 
+        line = list(color = 'black', width = 1))  
+  if (i_site_in==4){
+    y_txt_1 <- -15}
+  else{
+    y_txt_1 <- -35}
+      
+  
+  p <- p %>% add_trace(data, x = -35, y = y_txt_1, type = 'scatter',
+        mode = 'text', 
+        text = sprintf("<b>%s</b>", models[[i_mod]]) ,
+        textposition = 'middle right',
+        textfont = list(color = '#000000', size = 16))  
+  p <- p %>% add_trace(data, x = -35, y = y_txt_1+5, type = 'scatter',
+        mode = 'text', 
+        text = paste0("ME = ", format(ME, digits=2, nsmall=2)),
+        textposition = 'middle right',
+        textfont = list(color = '#000000', size = 16))  
+  p <- p %>% add_trace(data, x = -35, y = y_txt_1+10, type = 'scatter',
+        mode = 'text', 
+        text = paste0("RMSE = ", format(RMSE, digits=2, nsmall=2)),
+        textposition = 'middle right',
+        textfont = list(color = '#000000', size = 16))  
+
+return(p)
+}
+
+write("Site;Model;RMSE;ME;R2",file="StatTherm.csv",append=F)
+
+
+```
+
+
+sd
+``` {r mosaic_scatter}
+
+mosaic_scatter <- function(i_site){
+
+  PlotList <- list(plot_scatter_therm(1,i_site), plot_scatter_therm(2,i_site), plot_scatter_therm(3,i_site),
+                   plot_scatter_therm(4,i_site), plot_scatter_therm(5,i_site), plot_scatter_therm(6,i_site),
+                   plot_scatter_therm(7,i_site), plot_scatter_therm(8,i_site), plot_scatter_therm(9,i_site) )
+  
+  # PlotList = list(p,p,p,p,p,p,p,p,p)
+  
+  for (i in c(1:6)){
+    PlotList[[i]] <- PlotList[[i]]%>% 
+       layout(xaxis = list(showticklabels = FALSE))  }
+  for (i in c(2,3,5,6,8,9)){
+    PlotList[[i]] <- PlotList[[i]]%>% 
+       layout(yaxis = list(showticklabels = FALSE))  }
+             
+  
+  sp <- subplot(PlotList, nrows = 3, shareX = F, shareY = F) %>%
+          layout(yaxis = list(range= c(-40,0)),
+                 yaxis2 = list(range= c(-40,0)),
+                 yaxis3 = list(range= c(-40,0)),
+                 yaxis4 = list(title="Modelled firn temperature (°C)",
+                              range= c(-40,0)),   
+                 yaxis5 = list(range= c(-40,0)),     
+                 yaxis6 = list(range= c(-40,0)),
+                 yaxis7 = list(range= c(-40,0)),
+                 yaxis8 = list(range= c(-40,0)),
+                 yaxis9 = list(range= c(-40,0)),
+
+                 xaxis1 = list(range= c(-40,0)),
+                 xaxis2 = list(range= c(-40,0)),
+                 xaxis3 = list(range= c(-40,0)),
+                 xaxis4 = list(range= c(-40,0)),
+                 xaxis5 = list(range= c(-40,0)),
+                 xaxis6 = list(range= c(-40,0)),
+                 xaxis7 = list(range= c(-40,0)),
+                 xaxis8 = list(title="Observed firn temperature (°C)",
+                               range= c(-40,0)),
+                 xaxis9 = list(range= c(-40,0))
+                 )
+
+  sp
+  
+  plotly_IMAGE(sp, format = "png", autosize = T, 
+               out_file = paste0("Plots/scatter_therm_", sites[[i_site]],".png"),scale=5)
+}
+
+```
+
+
+``` {r T_firn KAN_U}
+mosaic_scatter(1)
+```
+
+``` {r T_firn Dye-2_long}
+mosaic_scatter(2)
+```
+
+``` {r T_firn Dye-2_16}
+mosaic_scatter(3)
+```
+
+``` {r T_firn Summit}
+mosaic_scatter(4)
+```
+
+``` {r T_firn FA}
+mosaic_scatter(5)
+```
+
+This document contains the scripts and plots for the RetMIP project (http://retain.geus.dk/index.php/retmip/).
+```{r Subsurface temperature}
+
+plot_therm_data <- function (i_site){
+  out_list <- extract_data_therm(i_site)
+  dat = out_list[[1]]
+  name_file = out_list[[2]]
+  df = out_list[[3]]
+  time = out_list[[4]]
+  
+  show_box <- list(showline = TRUE,
+      mirror = "ticks",
+      linecolor = toRGB("black"),
+      linewidth = 1)
+    
+  p <- plot_ly(x = time,y=0) %>%
+      layout(xaxis = c(list(title = "Year",
+                          range=c(min(time),max(time))),
+                          show_box),
+           yaxis = c(list (title = "Depth (m)", 
+                         range=c(max(dat$y),0)),
+                     show_box),
+           title=name_file)
+  p <- p %>% add_trace(x = time[df$x], y = df$y,z = df$z, 
+                       colors = (hcl.colors(20, "Blue-Red3")),  
+                       type = "heatmap",
+                       colorbar = list(title = list(text = "Firn temperature (°C)",
+                                                    side = "right"),
+                                       len=1),
+                       zauto = F,
+                       zmin = -40,
+                       zmax = 0)
+  
+  p <- p %>% add_trace(x = time[dat$x], y = dat$y, marker = list(size = 2,
+                         color = 'black'), type = "scatter",mode="markers")
+  plotly_IMAGE(p, format = "png", out_file = paste0("Plots/T_obs_",name_file,".png"),scale=10)
+  p
+}
+
+  
+``` 
+
+``` {r T_firn KANU}
+
+plot_therm_data(1)
+```
+
+``` {r T_firn Dye-2_long}
+plot_therm_data(2)
+```
+
+``` {r T_firn Dye-2_16}
+plot_therm_data(3)
+```
+
+``` {r T_firn Summit}
+plot_therm_data(4)
+```
+
+``` {r T_firn FA}
+plot_therm_data(5)
+```

@@ -1,6 +1,5 @@
 ---
 title: "R Notebook"
-output: html_notebook
 output:
   html_document:
     highlight: textmate
@@ -17,6 +16,8 @@ always_allow_html: yes
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(plotly)
+library(akima)
 library(ncdf4)
 library(ggplot2)
 library(reshape)
@@ -28,11 +29,27 @@ library(gridExtra)
 library(grid)
 library(fields)
 
+Sys.setenv("plotly_username"="BaptisteV")
+Sys.setenv("plotly_api_key"="7U99HT4nSOGDBKwUveT6")
+
 path_model<-'C:/Users/bav/OneDrive - Geological survey of Denmark and Greenland/Data/RetMIP/Model outputs/'
 sites<-list('KANU','Dye-2_long','Dye-2_16','Summit','FA')
 models <- list('CFM-Cr','CFM-KM','DTU','DMIHH','GEUS','IMAUFDM','MeyerHewitt','UppsalaUniBucket','UppsalaUniDeepPerc')
 start_time <- c("01-May-2012 00:00:00","01-Jun-1998 00:00:00","02-May-2016 00:00:00","02-Jul-2000 00:00:00","12-Apr-2014 00:00:00")
 end_time <- c("31-Dec-2016 06:00:00","02-May-2015 15:00:00","28-Oct-2016 09:00:00","08-Mar-2015 12:00:00","02-Dec-2014 21:00:00")
+
+
+
+Time2Posix <- function (orig_time,  time_in, timez='UTC'){
+  	days = time_in - as.numeric( as.Date("1970-01-01")  - as.Date(orig_time))
+  	# - 719529 	# 719529 = days from 1-1-0000 to 1-1-1970
+	  secs = days * 86400 # 86400 seconds in a day
+	return(as.POSIXct(strftime(
+	  as.POSIXct(secs, origin = "1970-01-01", 
+			tz = 'UTC'), format = '%Y-%m-%d %H:%M', 
+			tz = 'UTC', usetz = FALSE), tz = timez))
+}
+
 ```
 
 This document contains the scripts and plots for the RetMIP project (http://retain.geus.dk/index.php/retmip/).
@@ -46,6 +63,7 @@ water_balance <- function (i_site,  multipl_fact){
   
   if(missing(multipl_fact)) { multipl_fact<-1 }
 
+  # Loading the forcing data
 data_surf <- read.csv(paste0("C:/Users/bav/OneDrive - Geological survey of Denmark and Greenland/Data/RetMIP/Input files/surface/RetMIP_", sites[i_site], ".csv"),header=TRUE,sep=";")
 data_surf$date <- lubridate::parse_date_time(data_surf$time, orders = "d-b-Y H:M:S", locale = "us")
 
@@ -228,49 +246,7 @@ water_balance(i_site=5,  multipl_fact=1)
 
 ```
 
-```{r Subsurface temperature}
-  i_site <- 1
-  if(i_site==1) { name_file<-'KANU_PROMICE' } else {name_file <- sites[i_site]}
-
-  path_file <- paste0('../Data/Firn temperature/T_firn_',name_file,'.nc')
-  file_nc<- nc_open(path_file)
-  
-  depth <-    ncvar_get(file_nc, varid='depth')
-  T_firn <-    ncvar_get(file_nc, varid='Firn temperature')  
-  time <-    ncvar_get(file_nc, varid='time')
-  time<-1:length(time)
-  TT <- repmat(time,size(T_firn)[1],1)
-  therm_num <- repmat(matrix(1:size(T_firn)[1],nrow=size(T_firn)[1]),1,length(time))
-
-  dat <- t(rbind(as.vector(TT[,seq(0, length(time), by = 100)]),
-         as.vector(depth[,seq(0, length(time), by = 100)]),
-         as.vector(T_firn[,seq(0, length(time), by = 100)]),
-         as.vector(therm_num[,seq(0, length(time), by = 100)])))
-dat <- as.data.frame(dat)
-colnames(dat) <- c('x','y','z','therm_num')
-dat <- dat[!is.na(dat$z),]
-dat <- dat[!(dat$y<=0),]
-dat_dup <- dat [duplicated(dat[c(1,2)]),]
-dat <- dat [!duplicated(dat[c(1,2)]),]
-
-p1 <- ggplot() + geom_point(aes(y = z, x = x, colour = therm_num), size=1.5,
-                           data = dat[dat$therm_num==1:8,])
-p1
 
 
-fld <- interp(dat$x, dat$y, dat$z)
-gdat <- interp2xyz(fld, data.frame=TRUE)
 
-p <- ggplot(gdat) + 
-  aes(x = x, y = y, z = z, fill = z) + 
-  geom_tile() + 
-  scale_y_reverse() +
-  geom_contour(color = "white", alpha = 0.5) + 
-  scale_fill_distiller(palette="Spectral", na.value="white") +
-  geom_point(data = dat, aes(y = y, x = x, colour = therm_num), size=0.5)+
-  theme(panel.background = element_blank(),
-    axis.line = element_line(colour = "black"),
-    panel.border = element_rect(colour = "black", fill=NA, size=1))
-p
-```
 

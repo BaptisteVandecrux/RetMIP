@@ -1,12 +1,12 @@
 library(readxl)
 library(lubridate)
 library(ncdf4)
-d.dir <- "/media/mol/MARTINO/RetMIP_data/Firn_cores/cores/"
-o.dir <- "/home/mol/RetMIP/density/"
+d.dir <- "C:\\Users\\bav\\GitHub\\RetMIP\\Data\\cores"
+o.dir <- "Plots/"
 
 
 ##### get obs data ####
-corelist <- "/media/mol/MARTINO/RetMIP_data/Firn_cores/CoreList.xlsx"
+corelist <- "C:\\Users\\bav\\GitHub\\RetMIP\\Data\\CoreList.xlsx"
 corenames <- as.data.frame(read_excel(corelist, range = "B1:B704"))
 location <- as.data.frame(read_excel(corelist, range = "C1:C704"))
 
@@ -33,42 +33,27 @@ t <- t.kanu
 nr <- which(location==paste0(loc));nr
 
 ########### DMI ################
-m.dir <- "/media/mol/MARTINO/RetMIP_data/DMI/"
-#input <- "RetMIP_DMIHH_Dye-2_16_3hourly_columns.nc"
-input <- "RetMIP_DMIHH_Dye-2_long_3hourly_columns.nc"
-input <- "RetMIP_DMIHH_KAN-U_3hourly_columns.nc"
+m.dir <- path_model
+
+i_mod <- 1
+file_name_col <- paste('RetMIP_',models[i_mod],'_',sites[i_site],'_3hourly_columns.nc',sep = "")
+input<-paste(models[i_mod],'/',file_name_col,sep = "")
 
 nc <- nc_open(paste(m.dir,input, sep = ""))
 var <- ncvar_get(nc,"rho"); dim(var)
 var.dmi <- (var[nrow(var):1,])
 dim(var.dmi)
 
-########### CFM ################
-m.dir <- "/media/mol/MARTINO/RetMIP_data/CFM/"
-#input <- "RetMIP_DMIHH_Dye-2_16_3hourly_columns.nc"
-input <- "RetMIP_CFM-KM_Dye2long_3hourly_columns.nc"
-input <- "RetMIP_CFM-Cr_KANU_3hourly_columns.nc"
-
-nc <- nc_open(paste(m.dir,input, sep = ""))
-var <- ncvar_get(nc,"rho"); dim(var)
-var.cfm <- (var[nrow(var):1,])
-dim(var.cfm)
-
-
-png(filename = paste0(o.dir,"Density_prof_2mod_",loc,".png"),
-                      width=800, height=1000)
 par(mfrow = c(3,5))
     for(cn in nr) {
 
-co <- read.csv(paste0(d.dir,cn,".csv"), sep = ";")
+co <- read.csv(paste0(d.dir,'\\',cn,".csv"), sep = ";")
 co[which(co[,2]==-999),2] <- NA
 
 #### MODELDATA: ####
 t.m <- which(t==core_date[cn])
 
 rho.dmi <-(rev(var.dmi[,t.m]))
-rho.cfm <-(rev(var.cfm[,t.m]))
-
 
 #### plot data ####
 n <- length(co[,1])

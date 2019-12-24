@@ -1,9 +1,11 @@
+Data
 Data/Core_RetMIP.mat
 Data/UpGPR_Dye2_Heilig
 Data/Firn temperature
-Analysis/Plots
-Analysis/Save
-Analysis/.Rproj.user
+RetMIP Analysis/Plots
+RetMIP Analysis/Save
+RetMIP Analysis/.Rproj.user
+RetMIP Analysis/MeyerHewitt
 .RData
 .RHistory
 *.html

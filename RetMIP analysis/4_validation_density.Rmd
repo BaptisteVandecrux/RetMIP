@@ -1,0 +1,741 @@
+---
+title: "Density validation plot"
+output:
+  html_document:
+    highlight: textmate
+    theme: spacelab
+    toc: yes
+  pdf_document:
+    toc: yes
+  html_notebook:
+    toc: yes
+  word_document:
+    toc: yes
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(plotly)
+library(akima)
+library(ncdf4)
+library(ggplot2)
+library(reshape)
+library(functional)
+library(pracma)
+library(dplyr)
+library(lubridate)
+library(gridExtra)
+library(grid)
+library(fields)
+library(RColorBrewer)
+
+Sys.setenv("plotly_username"="BaptisteV")
+Sys.setenv("plotly_api_key"="Mb6fFibafxWcnixw0pl6")
+Sys.setlocale("LC_TIME", "English")
+
+path_model<-'C:/Users/bav/OneDrive - Geological survey of Denmark and Greenland/Data/RetMIP/Model outputs/'
+sites<-list('KANU','Dye-2_long','Dye-2_16','Summit','FA')
+models <- list('CFM-Cr','CFM-KM','DTU','DMIHH','GEUS','IMAUFDM','MeyerHewitt','UppsalaUniBucket','UppsalaUniDeepPerc')
+start_time <- c("01-May-2012 00:00:00","01-Jun-1998 00:00:00","02-May-2016 00:00:00","02-Jul-2000 00:00:00","12-Apr-2014 00:00:00")
+end_time <- c("31-Dec-2016 06:00:00","02-May-2015 15:00:00","28-Oct-2016 09:00:00","08-Mar-2015 12:00:00","02-Dec-2014 21:00:00")
+  start_time <- as.POSIXct(start_time, format = '%d-%b-%Y %H:%M:%S')
+  end_time <- as.POSIXct(end_time, format = '%d-%b-%Y %H:%M:%S')
+
+
+Time2Posix <- function (orig_time,  time_in, timez='UTC'){
+  	days = time_in - as.numeric( as.Date("1970-01-01")  - as.Date(orig_time))
+  	# - 719529 	# 719529 = days from 1-1-0000 to 1-1-1970
+	  secs = days * 86400 # 86400 seconds in a day
+	return(as.POSIXct(strftime(
+	  as.POSIXct(secs, origin = "1970-01-01", 
+			tz = 'UTC'), format = '%Y-%m-%d %H:%M', 
+			tz = 'UTC', usetz = FALSE), tz = timez))
+}
+
+```
+
+```{r Density}
+# loading data
+
+final_density_comp <- function (i_site,pal_name){
+  info_cores <- read.csv("C:\\Users\\bav\\GitHub\\RetMIP\\Data\\CoreList.csv", sep = ";")
+
+  if (i_site == 1){
+    info_cores <- info_cores[info_cores$NearestCodeLocation == list("KAN-U"), ]
+  }
+  if (i_site == 2){
+    info_cores <- info_cores[info_cores$NearestCodeLocation == "Dye-2",]
+  }
+  if (i_site == 3){
+    info_cores <- info_cores[info_cores$NearestCodeLocation == "Dye-2",]
+  }
+  if (i_site > 3){
+    info_cores <- info_cores[info_cores$NearestCodeLocation == sites[i_site],]
+  }
+  info_cores$Date <- as.POSIXct(info_cores$DateCored, format = '%d-%m-%Y')
+
+  
+  var_name <- 'rho'
+  offset <- 0
+  multipl_fact<-1
+  
+    info_cores <- info_cores[info_cores$Date > start_time[i_site],]
+    info_cores <- info_cores[info_cores$Date <= end_time[i_site]+120*3600*24,]
+    
+    for (ind_core in 1:length(info_cores$Date)){
+      core_num <- info_cores$CoreNo[ind_core]
+      core_date <- info_cores$Date[ind_core]
+      core_dat <- read.csv(paste0('C:\\Users\\bav\\GitHub\\RetMIP\\Data\\cores\\',
+                                  core_num,".csv"), sep = ";",header=F)
+      core_dat$V2[core_dat$V2<0] <- NaN
+    
+      for (i_mod in 1:9){
+        file_name_col <- paste('RetMIP_',models[i_mod],'_',
+                               sites[i_site],'_3hourly_columns.nc',sep = "")
+        path_file_col<-paste(path_model,models[i_mod],'/',file_name_col,sep = "")
+    
+        # loading column data
+        file_nc_col<- nc_open(path_file_col)
+        var_mod <- ncvar_get(file_nc_col, varid=var_name)
+        var_mod <- var_mod + offset
+        var_mod <- var_mod *multipl_fact
+      
+        if (i_mod == 6)
+          {var_mod <- var_mod[!is.na(var_mod[,1]),]}
+        
+        if (dim(var_mod)[1]>dim(var_mod)[2]) var_mod <- t(var_mod)
+        
+        time1<-1:dim(var_mod)[2]
+      
+        date_mod<-seq(start_time[i_site], end_time[i_site], 3600*3)
+    
+        if (length(date_mod)<length(time1)) {
+          var_mod<-var_mod[,- (1:(length(time1)-length(date_mod)))]
+          time1  <- time1[- (1:(length(time1)-length(date_mod)))]}
+        
+        if (length(date_mod)>length(time1)) {
+          print(length(date_mod))
+          print(length(time1))
+          time <- ncvar_get(file_nc_col, varid='time')
+          time<- time*3600*24 + as.POSIXct("1900-01-01")
+        }
+      
+        while (length(date_mod)>length(time1)) {
+          time1 <- append(time1, time1[length(time1)]+3600*3)
+          var_mod <- cbind(var_mod, var_mod[,length(time1)-1])}
+        
+        # selecting end date in the model
+        ind_comp <- which.min(abs(date_mod-core_date))
+        date_comp <- date_mod[ind_comp]
+        density_mod <- var_mod[,ind_comp]
+      
+        # rearranging in xyz array
+        Depth <- seq(0.1, 20, 0.1)
+        if (length(density_mod)>200){density_mod<-density_mod[seq(1,200)]}
+        if (i_mod==1) {
+          df <- data.frame(Depth,density_mod)
+          colnames(df)[0] <- "Depth"} 
+        else {df <- cbind(df,density_mod)}
+        colnames(df)[1+i_mod] <- models[i_mod]
+    }
+  
+      # Plotting 
+      
+      show_box <- list(showline = TRUE,
+          mirror = "ticks",
+          linecolor = toRGB("black"),
+          linewidth = 2)
+        
+      p1 <- plot_ly(df, y = ~Depth) %>%
+          layout(yaxis = c(list(title = "Depth",
+                               range = c(20, 0)),
+                           show_box),
+               xaxis = c(list (title = ""),   show_box))
+      
+      p2 <- p1
+      
+      p1 <- p1 %>% add_trace(x = core_dat$V2 ,y = core_dat$V1/100, 
+                          showlegend = FALSE,
+                           name = "Observed firn density",
+                           type = 'scatter',
+                           mode = 'lines',
+                           line = list(width = 10, color='rgb(210, 210, 210)'))
+        p1 <- p1 %>% add_trace(x = core_dat$V2 ,y = core_dat$V1/100, 
+                             name = 'Observed density',    
+                          showlegend = FALSE,
+                           type = 'scatter',
+                           mode = 'lines',
+                           line = list(width = 1, color='black'))
+    
+      
+      p3 <- p1
+    
+         p3 <- p3 %>% add_trace(x = core_dat$V2 ,y = core_dat$V1/100, 
+                           name = " ",
+                             legendgroup = 'group3',
+                           type = 'scatter',
+                           mode = 'lines',
+                           line = list(width = 0, color='white')) 
+        
+    
+          p1 <- p1 %>% add_trace(x = core_dat$V2 ,y = core_dat$V1/100, 
+                             name = 'Observed density',    
+                             legendgroup = 'group1',
+                           type = 'scatter',
+                           mode = 'lines',
+                           line = list(width = 1, color='black'))
+        
+        p2 <- p2 %>% add_trace(x = core_dat$V2 ,y = core_dat$V1/100, 
+                             name = 'Uncertainty',    
+                             legendgroup = 'group1',
+                           type = 'scatter',
+                           mode = 'lines',
+                           line = list(width = 10, color='rgb(210, 210, 210)'))
+        
+        p2 <- p2 %>% add_trace(x = core_dat$V2 ,y = core_dat$V1/100, 
+                             name = 'Observed density',    
+                          showlegend = FALSE,
+                           type = 'scatter',
+                           mode = 'lines',
+                           line = list(width = 1, color='black'))
+      # list of the column to be plotted
+      ToAdd <- setdiff(colnames(df),"Depth")
+        
+      # cbp1<-brewer.pal(9,pal_name)
+      get_palette<- colorRampPalette(brewer.pal(brewer.pal.info[ pal_name,1], pal_name))
+      cbp1<-get_palette(9)
+      
+      for(i in c(2,3,4)){
+        p1 <- p1 %>% add_trace(y = df[["Depth"]], x = df[,i], 
+                             name = colnames(df)[i],
+                             legendgroup = 'group2',
+                             type = 'scatter',
+                             mode = 'lines',
+                             line = list(width = 2, color=cbp1[i-1]))
+      }
+      
+      for(i in c(5,6,7)){
+        p2 <- p2 %>% add_trace(y = df[["Depth"]], x = df[,i], 
+                             name = colnames(df)[i],
+                             legendgroup = 'group3',
+                             type = 'scatter',
+                             mode = 'lines',
+                             line = list(width = 2, color=cbp1[i-1]))
+      }
+    
+      
+      for(i in c(8,9,10)){
+        p3 <- p3 %>% add_trace(y = df[["Depth"]], x = df[,i], 
+                             name = colnames(df)[i],
+                             legendgroup = 'group4',
+                             type = 'scatter',
+                             mode = 'lines',
+                             line = list(width = 2, color=cbp1[i-1]))
+      }
+    
+      
+      PlotList= list(p1,p2,p3) 
+      
+      # Removing yticks
+      for (i in c(2,3)){
+          PlotList[[i]] <- PlotList[[i]]%>% 
+             layout(yaxis = list(showticklabels = FALSE))  }
+      
+      p <- subplot(PlotList, nrows = 1, shareX = F, shareY = F, heights = c(1), widths=c(0.2, 0.2, 0.2)*0.9) %>%
+              layout(title = paste0(info_cores$Name[ind_core],"                 ."),
+                     yaxis = list(title="Depth (m)",
+                                  range= c(20,0)),
+                     yaxis2 = list(range= c(20,0)),
+                     xaxis2 = list(title="Firn density (kg m<sup>-3</sup>)",
+                                  range =c(300, 950)),
+                                  xaxis = list(range = c(300, 950))
+                    )
+      print(info_cores$Name[ind_core])
+      
+    plotly_IMAGE(p, format = "png",
+                 out_file = paste0("Plots/density_final_",sites[i_site],"_",ind_core,".png"),
+                 width = 500, height = 400, scale=10)
+      p
+    }
+}
+
+```
+eojgeo
+
+```{r Plotting final density KANU}
+final_density_comp(1,"Set1")
+
+```
+
+```{r Plotting final density Dye-2_16}
+final_density_comp(2,"Set1")
+
+```
+
+```{r Plotting final density Dye-2_long}
+final_density_comp(3,"Set1")
+
+```
+
+```{r Plotting final density Summit}
+final_density_comp(4,"Set1")
+
+```
+
+```{r Plotting final density FA}
+final_density_comp(5,"Set1")
+
+```
+
+```{r scatter density}
+
+scatter_density <- function (i_site,i_mod){
+  info_cores <- read.csv("C:\\Users\\bav\\GitHub\\RetMIP\\Data\\CoreList.csv", sep = ";")
+  if (i_site == 1){
+    info_cores <- info_cores[info_cores$NearestCodeLocation == list("KAN-U"), ]
+  }
+  if (i_site == 2){
+    info_cores <- info_cores[info_cores$NearestCodeLocation == "Dye-2",]
+  }
+  if (i_site == 3){
+    info_cores <- info_cores[info_cores$NearestCodeLocation == "Dye-2",]
+  }
+  if (i_site > 3){
+    info_cores <- info_cores[info_cores$NearestCodeLocation == sites[i_site],]
+  }
+  info_cores$Date <- as.POSIXct(info_cores$DateCored, format = '%d-%m-%Y')
+  
+  var_name <- 'rho'
+  offset <- 0
+  multipl_fact<-1
+  
+    file_name_col <- paste('RetMIP_',models[i_mod],'_',sites[i_site],'_3hourly_columns.nc',sep = "")
+    path_file_col<-paste(path_model,models[i_mod],'/',file_name_col,sep = "")
+    
+    # loading column data
+    file_nc_col<- nc_open(path_file_col)
+    var_mod <- ncvar_get(file_nc_col, varid=var_name)
+    var_mod <- var_mod *multipl_fact
+    
+    if (i_mod == 6)
+      {var_mod <- var_mod[!is.na(var_mod[,1]),]}
+    
+    if (dim(var_mod)[1]>dim(var_mod)[2]) var_mod <- t(var_mod)
+    
+    time1<-1:dim(var_mod)[2]
+    
+    date_mod<-seq(lubridate::dmy_hms(start_time[i_site]),
+      lubridate::dmy_hms(end_time[i_site]),
+      3600*3)
+  
+    if (length(date_mod)<length(time1)) {
+      var_mod<-var_mod[,- (1:(length(time1)-length(date_mod)))]
+      time1  <- time1[- (1:(length(time1)-length(date_mod)))]}
+    
+    if (length(date_mod)>length(time1)) {
+      print(length(date_mod))
+      print(length(time1))
+      time <- ncvar_get(file_nc_col, varid='time')
+      time<- time*3600*24 + as.POSIXct("1900-01-01")
+    }
+    
+    while (length(date_mod)>length(time1)) {
+      time1 <- append(time1, time1[length(time1)]+3600*3)
+      var_mod <- cbind(var_mod, var_mod[,length(time1)-1])}
+    count_core <- 0
+          print(date_mod[1])
+    # selecting end date in the model
+    for (i_core in 1:length(info_cores$Date)){
+
+      if (info_cores$Date[i_core] < date_mod[1]+120*3600*24){next}
+      if (info_cores$Date[i_core] > date_mod[length(date_mod)]+30*3600*24){next}
+      count_core <- count_core + 1
+      print(info_cores$Date[i_core]) 
+      # finding index in the model coresponding to that core
+      ind_time <- abs(info_cores$Date[i_core] - date_mod) == min(abs(info_cores$Date[i_core] - date_mod))
+      date_comp <- date_mod[ind_time]
+
+      # loading observed core data
+      core_num <- info_cores$CoreNo[i_core]
+      core_dat <- read.csv(paste0('C:\\Users\\bav\\GitHub\\RetMIP\\Data\\cores\\',core_num,".csv"), sep = ";",header=F)
+      core_dat$V2[core_dat$V2<0] <- NaN
+      core_dat<-core_dat[core_dat$V1<=2000,]
+      
+      ind_depth <- rep(1:floor(length(core_dat$V2)/5), each=10)
+      bin_end <- ind_depth[length(ind_depth)]
+      while (length(ind_depth)<length(core_dat$V2)){
+        ind_depth <- c(ind_depth,bin_end+1)
+      }
+      
+      core_dat_avg<- data.frame("Depth" = (seq(1,min(max(ind_depth),200)))*0.1,
+                                "Density" = accumarray(ind_depth[ind_depth<201], core_dat$V2[ind_depth<201], func = mean))
+ 
+      # modelled density
+      density_mod <- var_mod[,ind_time]
+      depth_mod <- seq(0.1, 20, 0.1)
+      
+      if (length(density_mod)>200){density_mod<-density_mod[seq(1,200)]}
+      
+      # constructing two tables: one with observed core density and one with modelled density
+      # they have the same number of columns and are both averaged on 0.1:0.1:20 m depth
+      if (count_core==1) {
+        df_mod <- data.frame(depth_mod,density_mod)
+        colnames(df_mod)[1] <- "Depth"
+        df_obs <- data.frame(depth_mod,density_mod*NaN)
+        colnames(df_obs)[1] <- "Depth"}  else {
+        df_mod <- cbind(df_mod,density_mod)
+        df_obs <- cbind(df_obs,density_mod*NaN)
+        }
+      colnames(df_mod)[1+count_core] <- paste0("core",core_num)
+      colnames(df_obs)[1+count_core] <- paste0("core",core_num)
+      df_obs[seq(1,length(core_dat_avg$Density)) ,1+count_core]<- core_dat_avg$Density
+    }
+    
+    df_obs_m <- melt(df_obs,id.vars="Depth",measure.vars = colnames(df_mod)[-1])
+    df_mod_m <- melt(df_mod,id.vars="Depth",measure.vars = colnames(df_mod)[-1])
+    
+    ME <- mean(df_mod_m$value - df_obs_m$value,na.rm = T)
+    RMSE <- sqrt(mean((df_mod_m$value - df_obs_m$value)^2,na.rm = T))
+
+  show_box <- list(showline = TRUE,
+      mirror = "ticks",
+      linecolor = toRGB("black"),
+      linewidth = 2)
+  
+  p <- plot_ly(x = df_obs_m$value) %>%
+     layout(xaxis = c(list(title = "Observed density (kg m <sup>-3</sup>)",
+                          range=c(100,910)),
+                          show_box),
+           yaxis = c(list (title = "Modelled density (kg m <sup>-3</sup>)", 
+                         range=c(100,910)),
+                     show_box),
+           showlegend = FALSE,
+           title = sites[[i_site]])
+
+  p <- p %>% add_trace( x = df_obs_m$value,
+                        y = df_mod_m$value,
+                       type = 'scatter',
+                       mode = 'markers',
+                       marker = list(size = 4,
+                                     cauto = F,
+                                     cmin = 0,
+                                     cmax=16,
+                                     symbol = df_obs_m$variable,
+                                    color = df_obs_m$Depth,
+                                    colorbar = list(title = list(text = "Depth (m)",
+                                                                 side = "right"),
+                                                    len=1),
+                                    colorscale = "Rainbow")
+                      )
+  p <- p %>% add_trace( x = c(100,910), y = c(100,910), type = 'scatter',
+        mode = 'line', 
+        line = list(color = 'black', width = 1))  
+  # if (i_site_in==4){
+  #   y_txt_1 <- -15}
+  # else{
+  #   y_txt_1 <- -35}
+      
+  y_txt <- 850
+  x_txt <- 150
+  p <- p %>% add_trace(data, x = x_txt, y = y_txt, type = 'scatter',
+        mode = 'text', 
+        text = sprintf("<b>%s</b>", models[[i_mod]]) ,
+        textposition = 'middle right',
+        textfont = list(color = '#000000', size = 16))  
+  p <- p %>% add_trace(data, x = x_txt, y = y_txt-50, type = 'scatter',
+        mode = 'text', 
+        text = paste0("ME = ", format(ME, digits=2, nsmall=2)),
+        textposition = 'middle right',
+        textfont = list(color = '#000000', size = 16))  
+  p <- p %>% add_trace(data, x = x_txt, y = y_txt-100, type = 'scatter',
+        mode = 'text', 
+        text = paste0("RMSE = ", format(RMSE, digits=2, nsmall=2)),
+        textposition = 'middle right',
+        textfont = list(color = '#000000', size = 16))  
+
+  return(p)
+}
+  
+ scatter_density(i_site=4,i_mod=1)
+
+
+```
+
+```{r}
+
+ scatter_density(i_site=2,i_mod=5)
+
+  
+```
+
+```{r time series density}
+# loading data
+
+density_comp <- function (i_site,pal_name){
+  info_cores <- read.csv("C:\\Users\\bav\\GitHub\\RetMIP\\Data\\CoreList.csv", sep = ";")
+
+  if (i_site == 1){
+    info_cores <- info_cores[info_cores$NearestCodeLocation == list("KAN-U"), ]
+  }
+  if (i_site == 2){
+    info_cores <- info_cores[info_cores$NearestCodeLocation == "Dye-2",]
+  }
+  if (i_site == 3){
+    info_cores <- info_cores[info_cores$NearestCodeLocation == "Dye-2",]
+  }
+  if (i_site > 3){
+    info_cores <- info_cores[info_cores$NearestCodeLocation == sites[i_site],]
+  }
+  info_cores$Date <- as.POSIXct(info_cores$DateCored, format = '%d-%m-%Y')
+  
+  var_name <- 'rho'
+  offset <- 0
+  multipl_fact<-1
+  
+  for (i_mod in 1:9){
+    file_name_col <- paste('RetMIP_',models[i_mod],'_',sites[i_site],'_3hourly_columns.nc',sep = "")
+    path_file_col<-paste(path_model,models[i_mod],'/',file_name_col,sep = "")
+    
+    # loading column data
+    file_nc_col<- nc_open(path_file_col)
+    var_mod <- ncvar_get(file_nc_col, varid=var_name)
+    var_mod <- var_mod + offset
+    var_mod <- var_mod *multipl_fact
+    
+    if (i_mod == 6)
+      {var_mod <- var_mod[!is.na(var_mod[,1]),]}
+    
+    if (dim(var_mod)[1]>dim(var_mod)[2]) var_mod <- t(var_mod)
+    
+    time1<-1:dim(var_mod)[2]
+    
+    date_mod<-seq(start_time[i_site],
+      end_time[i_site],
+      3600*3)
+  
+    if (length(date_mod)<length(time1)) {
+      var_mod<-var_mod[,- (1:(length(time1)-length(date_mod)))]
+      time1  <- time1[- (1:(length(time1)-length(date_mod)))]}
+    
+    if (length(date_mod)>length(time1)) {
+      print(length(date_mod))
+      print(length(time1))
+      time <- ncvar_get(file_nc_col, varid='time')
+      time<- time*3600*24 + as.POSIXct("1900-01-01")
+    }
+    
+    while (length(date_mod)>length(time1)) {
+      time1 <- append(time1, time1[length(time1)]+3600*3)
+      var_mod <- cbind(var_mod, var_mod[,length(time1)-1])}
+
+    var_mod_1 = colMeans(var_mod[1:10,])
+    var_mod_2 = colMeans(var_mod[10:100,])
+    var_mod_3 = colMeans(var_mod[100:200,])
+
+    # rearranging in array
+    if (i_mod==1) {
+      df1 <- data.frame(date_mod,var_mod_1)
+      colnames(df1)[0] <- "Date"
+      df2 <- data.frame(date_mod,var_mod_2)
+      colnames(df2)[0] <- "Date"
+      df3 <- data.frame(date_mod,var_mod_3)
+      colnames(df3)[0] <- "Date"} 
+    else {
+      df1 <- cbind(df1,var_mod_1)
+      df2 <- cbind(df2,var_mod_2)
+      df3 <- cbind(df3,var_mod_3)
+      }
+    colnames(df1)[1+i_mod] <- models[i_mod]
+    colnames(df2)[1+i_mod] <- models[i_mod]
+    colnames(df3)[1+i_mod] <- models[i_mod]
+    
+    # Calculating average density for the observation
+    info_cores <- info_cores[info_cores$Date>=date_mod[1],]
+    info_cores <- info_cores[info_cores$Date<=date_mod[length(date_mod)],]
+    info_cores$avg_dens1 <- NaN*info_cores$CoreNo
+    info_cores$avg_dens2 <- NaN*info_cores$CoreNo
+    info_cores$avg_dens3 <- NaN*info_cores$CoreNo
+    count_core <- 0
+    # selecting end date in the model
+    for (i_core in 1:length(info_cores$Date)){
+      count_core <- count_core + 1
+
+      # loading observed core data
+      core_num <- info_cores$CoreNo[i_core]
+      core_dat <- read.csv(paste0('C:\\Users\\bav\\GitHub\\RetMIP\\Data\\cores\\',core_num,".csv"), sep = ";",header=F)
+      core_dat$V2[core_dat$V2<0] <- NaN
+      core_dat<-core_dat[core_dat$V1<=2000,]
+      if (length(core_dat$V2)>=100) {info_cores$avg_dens1[i_core] = mean(core_dat$V2[1:100])}
+      if (length(core_dat$V2)>=1000) {info_cores$avg_dens2[i_core] = mean(core_dat$V2[101:1000])}
+      if (length(core_dat$V2)>=2000) {info_cores$avg_dens3[i_core] = mean(core_dat$V2[1001:2000])}
+    }
+  }
+  
+  # Plotting 
+  
+  show_box <- list(showline = TRUE,
+      mirror = "ticks",
+      linecolor = toRGB("black"),
+      linewidth = 2)
+    
+  p1 <- plot_ly(df1, x= ~Date) %>%
+      layout(xaxis = c(list(title = "Date",
+                       range = df1$date_mod[c(1,length(df1$date_mod))]),
+                       show_box),
+           yaxis = c(list (title = "Average density",
+                           range = c(300, 920)),   
+                     show_box))
+  p2 <- p1
+  p3 <- p1
+
+  get_palette<- colorRampPalette(brewer.pal(brewer.pal.info[ pal_name,1], pal_name))
+  cbp1<-get_palette(9)
+  
+  for(i in 2:10){
+    p1 <- p1 %>% add_trace(x = df1$date_mod, y = df1[,i], 
+                         name = colnames(df1)[i],
+                         type = 'scatter',
+                         mode = 'lines',
+                         line = list(width = 2, color=cbp1[i-1]))
+    p2 <- p2 %>% add_trace(x = df1$date_mod, y = df2[,i], 
+                         name = colnames(df1)[i],
+                         type = 'scatter',
+                         mode = 'lines',
+                         line = list(width = 2, color=cbp1[i-1]),
+                         showlegend = FALSE)
+    p3 <- p3 %>% add_trace(x = df1$date_mod, y = df3[,i], 
+                         name = colnames(df1)[i],
+                         type = 'scatter',
+                         mode = 'lines',
+                         line = list(width = 2, color=cbp1[i-1]),
+                         showlegend = FALSE)
+  }
+
+
+if (i_site == 2){
+p1 <- p1 %>% add_trace(data, x =df1$date_mod[100], y = 850, type = 'scatter',
+        mode = 'text', text = "<b>d) 0-1 m depth<b>", textposition = 'middle right',
+        showlegend = FALSE,
+                     textfont = list(color = '#000000', size = 16))
+p2 <- p2 %>% add_trace(data, x = df1$date_mod[100], y = 380, type = 'scatter',
+        mode = 'text', text = "<b>e) 1-10 m depth <b>", textposition = 'middle right',
+        showlegend = FALSE,
+                     textfont = list(color = '#000000', size = 16))
+p3 <- p3 %>% add_trace(data, x = df1$date_mod[100], y = 400, type = 'scatter',
+        mode = 'text', text = "<b>f) 10-20 m depth<b>", textposition = 'middle right',
+        showlegend = FALSE,
+                     textfont = list(color = '#000000', size = 16))
+} else {
+  p1 <- p1 %>% add_trace(data, x =df1$date_mod[100], y = 850, type = 'scatter',
+        mode = 'text', text = "<b>a) 0-1 m depth<b>", textposition = 'middle right',
+        showlegend = FALSE,
+                     textfont = list(color = '#000000', size = 16))
+p2 <- p2 %>% add_trace(data, x = df1$date_mod[100], y = 380, type = 'scatter',
+        mode = 'text', text = "<b>b) 1-10 m depth <b>", textposition = 'middle right',
+        showlegend = FALSE,
+                     textfont = list(color = '#000000', size = 16))
+p3 <- p3 %>% add_trace(data, x = df1$date_mod[100], y = 400, type = 'scatter',
+        mode = 'text', text = "<b>c) 10-20 m depth<b>", textposition = 'middle right',
+        showlegend = FALSE,
+                     textfont = list(color = '#000000', size = 16))
+}
+  
+
+
+error_spec <-list(type='constant',
+                  value=40,
+                  color='black',
+                  thickness=2,
+                  width=3)
+p1 <- p1 %>% add_trace(x =info_cores$Date[!is.nan(info_cores$avg_dens1)],
+                       y = info_cores$avg_dens1[!is.nan(info_cores$avg_dens1)],
+                       type = 'scatter',
+                       mode = 'markers',
+                       name = 'Observations',
+                      marker = list(
+                        color = 'black',
+                        size = 6
+                        ),
+                      error_y = error_spec)
+p2 <- p2 %>% add_trace(x =info_cores$Date[!is.nan(info_cores$avg_dens2)],
+                       y = info_cores$avg_dens2[!is.nan(info_cores$avg_dens2)],
+                       type = 'scatter',
+                      mode = 'markers',
+                      showlegend = FALSE,
+                      marker = list(
+                        color = 'rgb(0, 0, 0)',
+                        size = 6),
+                      error_y = error_spec)
+p3 <- p3 %>% add_trace(x =info_cores$Date[!is.nan(info_cores$avg_dens3)],
+                       y = info_cores$avg_dens3[!is.nan(info_cores$avg_dens3)],
+                       type = 'scatter',
+                      mode = 'markers',
+                      showlegend = FALSE,
+                      marker = list(
+                        color = 'rgb(0, 0, 0)',
+                        size = 6),
+                      error_y = error_spec)
+
+
+  PlotList= list(p1,p2,p3)
+  
+  # Removing xticks
+  for (i in c(1,2)){
+      PlotList[[i]] <- PlotList[[i]]%>% 
+         layout(xaxis = list(showticklabels = FALSE))  }
+  # p <- subplot(PlotList, nrows = 3)
+  p <- subplot(PlotList, nrows = 3,widths = c(0.5))   %>%
+          layout(title= sites[i_site],
+                 yaxis = list(title=" "),
+                 yaxis2 = list(title="Average firn density (kg m<sup>-3</sup>)"),
+                 xaxis = list(title=""),
+                 xaxis3 = list(title="Year"))
+
+df1 <- transform(df1, SD=apply(df1[,2:10],1, sd, na.rm = TRUE))
+print(max(df1$SD))
+print(mean(df1$SD))
+df2 <- transform(df2, SD=apply(df2[,2:10],1, sd, na.rm = TRUE))
+print(max(df2$SD))
+print(mean(df2$SD))
+df3 <- transform(df3, SD=apply(df3[,2:10],1, sd, na.rm = TRUE))
+print(max(df3$SD))
+print(mean(df3$SD))
+
+p
+p1 <-p1 %>%
+  layout(xaxis=list(title=""),
+         legend = list(orientation = 'h'))
+p1
+
+# plotly_IMAGE(p1, format = "png",
+#              out_file = paste0("Plots/density_",sites[i_site],".png"),
+#              width = 500, height = 400, scale=10)
+}
+density_comp(2,"Set1")
+
+
+```
+eojgeo
+
+```{r Plotting average density Dye-2_long}
+density_comp(2,"Set1")
+
+```
+
+```{r Plotting average density Dye-2_16}
+density_comp(3,"Set1")
+
+```
+
+```{r Plotting average density Summit}
+density_comp(4,"Set1")
+
+```
+
+```{r Plotting average density FA}
+density_comp(5,"Set1")
+
+```
+
+
