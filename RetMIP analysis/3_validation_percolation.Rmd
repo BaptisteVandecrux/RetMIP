@@ -215,6 +215,6 @@ p<- subplot(p1,p2,p3, nrows = 3,shareX = TRUE)
 p <- p %>% layout(yaxis2 = list (title = "Percolation depth (m)",
                        range = c(5,0)))
 p
-plotly_IMAGE(p, format = "png", out_file = paste0("Plots/percolation_depth_val.png"),width = 600, height = 400,scale=10)
+#plotly_IMAGE(p, format = "png", out_file = #paste0("Plots/percolation_depth_val.png"),width = 600, height = 400,scale=10)
 
 ```

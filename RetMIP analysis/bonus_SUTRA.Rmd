@@ -1,5 +1,5 @@
 ---
-title: "RetMIP subsurface plots"
+title: "RetMIP SUTRA plots"
 output:
   html_document:
     highlight: textmate
@@ -32,10 +32,10 @@ library(TeachingDemos)
 Sys.setlocale("LC_TIME", "English")
 
 path_model<-'C:/Users/bav/OneDrive - Geological survey of Denmark and Greenland/Data/RetMIP/Model outputs/'
-sites<-list('KANU','Dye-2_long','Dye-2_16','Summit','FA')
-models <- list('CFM-Cr','CFM-KM','DTU','DMIHH','GEUS','IMAUFDM','MeyerHewitt','UppsalaUniBucket','UppsalaUniDeepPerc')
-start_time <- c("01-May-2012 00:00:00","01-Jun-1998 00:00:00","02-May-2016 00:00:00","02-Jul-2000 00:00:00","12-Apr-2014 00:00:00")
-end_time <- c("31-Dec-2016 06:00:00","02-May-2015 15:00:00","28-Oct-2016 09:00:00","08-Mar-2015 12:00:00","02-Dec-2014 21:00:00")
+sites<-list('KANU_70perm','KANU_700perm')
+models <- list('SUTRAICE','SUTRAICE')
+start_time <- c("01-May-2012 00:00:00","01-May-2012 00:00:00")
+end_time <- c("31-Dec-2016 06:00:00","31-Dec-2016 06:00:00")
 ```
 
 This document contains the scripts and plots for the RetMIP project (http://retain.geus.dk/index.php/retmip/).
@@ -49,7 +49,7 @@ multiplot <- function (models,var_name,clab_text,i_site,set_lim,offset,multipl_f
     multipl_fact<-1
   }
   # === Loading data ===
-  for (i_mod in 1:9){
+  for (i_mod in 1:2){
     file_name_col <- paste('RetMIP_',models[i_mod],'_',sites[i_site],'_3hourly_columns.nc',sep = "")
     path_file_col<-paste(path_model,models[i_mod],'/',file_name_col,sep = "")
     
@@ -147,91 +147,39 @@ multiplot <- function (models,var_name,clab_text,i_site,set_lim,offset,multipl_f
            colour = if (or(var_name == "temp",var_name == "lwc") )
                         {if(i_site==4){"black"}else{"white"}}
                         else {"black"},fontface="bold")+
-        theme(legend.position = if (i_mod==3) {c(1.1,0.9)} else {"none"},
+        theme(title=,
+              legend.position = if (i_mod==3) {c(1.1,0.9)} else {"none"},
           legend.justification = c(0,1),
           plot.margin=margin(0,10,10,0),
           axis.title.x = element_blank(),
-          axis.text.x = if (i_mod %in% 7:9) {} else {element_blank()}, #element_text(angle=45)
           axis.title.y = element_blank(),
-          axis.text.y = if (i_mod %in% c(1,4,7)) {element_text()} else {element_blank()},
           panel.background = element_blank(),
           axis.line = element_line(colour = "black"),
-          panel.border = element_rect(colour = "black", fill=NA, size=1))
+          panel.border = element_rect(colour = "black", fill=NA, size=1))+
+      ggtitle(paste0(letters[i_mod],") ",sites[i_mod]))
+    
   })
   i_seq<-c(3,2,5,1,4)
-  p_final <- grid.arrange(grobs=pList, nrow=3,
-    top=paste0(letters[i_seq[i_site]],') ',sites[[i_site]]),
+  p_final <- grid.arrange(grobs=pList, nrow=1,
     left="Depth (m)",
     bottom="Year",
     right=" ",
-    vp=viewport(x=0, just="left", width=0.8, height=1),
-    heights=unit(c(3.19,3.19,4), c("cm","cm", "cm")),
-    widths = c(1.1,1,1))
+    vp=viewport(x=0, just="left", width=1, height=1),
+    widths = c(1.2,1.2))
   print("Saving...")
   ggsave(filename=paste0("Plots/",sites[[i_site]],"_",var_name,"_2D.jpg"),plot=p_final,device = "jpeg")
 }
 ```
 
-
 ```{r rho 1}
   multiplot(models,var_name="rho",clab_text='Density (kg m-3)',i_site = 1,set_lim = c(315,920))
 ```
 
-```{r rho 2}
-  multiplot(models,var_name="rho",clab_text='Density (kg m-3)',i_site = 2,set_lim = c(315,920))
+```{r rho 1}
+  multiplot(models,var_name="temp",clab_text='temp (kg m-3)',i_site = 1,set_lim = c(-30,0), offset=-273.15)
 ```
 
-```{r rho 2}
-  multiplot(models,var_name="rho",clab_text='Density (kg m-3)',i_site = 3,set_lim = c(315,920))
-```
-
-```{r rho 4}
-  multiplot(models,var_name="rho",clab_text='Density (kg m-3)',i_site = 4,set_lim = c(315,920))
-```
-
-```{r rho 5}
-  multiplot(models,var_name="rho",clab_text='Density (kg m-3)',i_site = 5,set_lim = c(315,920))
-```
-
-```{r Temperature 1}
-  multiplot(models,var_name="temp",clab_text='Temperature (deg C)',i_site = 1, set_lim=c(-40,0),offset=-273.15)
-```
-
-```{r Temperature 2}
-  multiplot(models,var_name="temp",clab_text='Temperature (deg C)',i_site = 2, set_lim=c(-40,0),offset=-273.15)
-```
-
-```{r Temperature 3}
-  multiplot(models,var_name="temp",clab_text='Temperature (deg C)',i_site = 3, set_lim=c(-40,0),offset=-273.15)
-```
-
-```{r Temperature 4}
-  multiplot(models,var_name="temp",clab_text='Temperature (deg C)',i_site = 4, set_lim=c(-40,0),offset=-273.15)
-```
-
-```{r Temperature 5}
-  multiplot(models,var_name="temp",clab_text='Temperature (deg C)',i_site = 5, set_lim=c(-40,0),offset=-273.15)
-```
-
-```{r lwc 1}
-  multiplot(models,var_name="lwc",clab_text='Liquid water content (mm w.eq.)',i_site = 1,
-multipl_fact=1, set_lim=c(0,5))
-```
-
-```{r lwc 2}
-  multiplot(models,var_name="lwc",clab_text='Liquid water content (mm w.eq.)',i_site = 2,
-multipl_fact=1, set_lim=c(0,5))
-```
-
-```{r wc 3}
-  multiplot(models,var_name="lwc",clab_text='Liquid water content (mm w.eq.)',i_site = 3,
-multipl_fact=1, set_lim=c(0,5))
-```
-
-
-
-```{r lwc 5}
-multiplot(models,var_name="lwc",clab_text='Liquid water content (mm w.eq.)',i_site = 5,
-  multipl_fact=1, set_lim=c(0,10))
+```{r rho 1}
+  multiplot(models,var_name="lwc",clab_text='lwc (kg m-3)',i_site = 1,set_lim = c(0,5000))
 ```
 
