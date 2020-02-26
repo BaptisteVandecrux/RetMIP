@@ -29,6 +29,7 @@ library(grid)
 library(viridis)
 library(RColorBrewer)
 library(TeachingDemos)
+library(scales)
 Sys.setlocale("LC_TIME", "English")
 
 path_model<-'C:/Users/bav/OneDrive - Geological survey of Denmark and Greenland/Data/RetMIP/Model outputs/'
@@ -119,7 +120,9 @@ multiplot <- function (models,var_name,clab_text,i_site,set_lim,offset,multipl_f
           labels=c("0", "5", "10","15","20"),
           expand=c(0.02,0.01),
           limits=  if (var_name == "lwc") {if (i_site==5){c(-200,0)}else{c(-70, 0 )}} else {c(-200,0)})+
-        scale_x_datetime(expand=c(0.02,0.01))+
+        scale_x_datetime(expand=c(0.02,0.01), 
+                         labels = if (i_site==5 || i_site==3){
+                           date_format("%b-%y")} else {date_format("%Y")})+
         scale_fill_gradientn(name=clab_text,
           colours = if (var_name == "rho") 
                       {brewer.pal(6,"YlGnBu")}
