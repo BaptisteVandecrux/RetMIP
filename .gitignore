@@ -10,3 +10,4 @@ RetMIP Analysis/MeyerHewitt
 .RHistory
 *.html
 *.Rproj
+.Rproj.user

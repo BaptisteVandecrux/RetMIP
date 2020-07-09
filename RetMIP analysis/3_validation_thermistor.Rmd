@@ -29,16 +29,35 @@ library(gridExtra)
 library(grid)
 library(fields)
 library(scales)
-
+library(RColorBrewer)
+library(ggpubr)
+library(akima)
+library(ncdf4)
+library(ggplot2)
+library(reshape)
+library(functional)
+library(pracma)
+library(dplyr)
+library(lubridate)
+library(gridExtra)
+library(grid)
+library(fields)
+library(RColorBrewer)
+library(viridis)
+library(grDevices)
+library(cowplot)
 Sys.setenv("plotly_username"="BaptisteV")
 Sys.setenv("plotly_api_key"="Mb6fFibafxWcnixw0pl6")
 Sys.setlocale("LC_TIME", "English")
 
 path_model<-'C:/Users/bav/OneDrive - Geological survey of Denmark and Greenland/Data/RetMIP/Model outputs/'
 sites<-list('KANU','Dye-2_long','Dye-2_16','Summit','FA')
-models <- list('CFM-Cr','CFM-KM','DTU','DMIHH','GEUS','IMAUFDM','MeyerHewitt','UppsalaUniBucket','UppsalaUniDeepPerc')
+models <- list('CFM-Cr','CFM-KM','DTU','DMIHH','GEUS','IMAUFDM','MeyerHewitt','UppsalaUniBucket','UppsalaUniDeepPerc','SUTRAICE_70perm','SUTRAICE_700perm')
+
 start_time <- c("01-May-2012 00:00:00","01-Jun-1998 00:00:00","02-May-2016 00:00:00","02-Jul-2000 00:00:00","12-Apr-2014 00:00:00")
 end_time <- c("31-Dec-2016 06:00:00","02-May-2015 15:00:00","28-Oct-2016 09:00:00","08-Mar-2015 12:00:00","02-Dec-2014 21:00:00")
+start_time <- as.POSIXct(start_time,tz = 'UTC', format = '%d-%b-%Y %H:%M:%S')
+end_time <- as.POSIXct(end_time,tz = 'UTC', format = '%d-%b-%Y %H:%M:%S')
 
 Time2Posix <- function (orig_time,  time_in, timez='UTC'){
   	days = time_in - as.numeric( as.Date("1970-01-01")  - as.Date(orig_time))
@@ -66,12 +85,8 @@ This document contains the scripts and plots for the RetMIP project (http://reta
 ```{r extract_model_data}
 
 extract_model_data <- function (i_mod,var_name,clab_text,i_site,set_lim,offset,multipl_fact){
-  if(missing(offset)) {
-    offset<-0
-  }
-  if(missing(multipl_fact)) {
-    multipl_fact<-1
-  }
+  if(missing(offset)) { offset<-0 }
+  if(missing(multipl_fact)) { multipl_fact<-1 }
   # === Loading data ===
     file_name_col <- paste('RetMIP_',models[i_mod],'_',sites[i_site],'_3hourly_columns.nc',sep = "")
     path_file_col<-paste(path_model,models[i_mod],'/',file_name_col,sep = "")
@@ -82,51 +97,35 @@ extract_model_data <- function (i_mod,var_name,clab_text,i_site,set_lim,offset,m
     var_mod <- var_mod + offset
     var_mod <- var_mod *multipl_fact
     
-    if (i_mod == 6)
-      {var_mod <- var_mod[!is.na(var_mod[,1]),]}
-    
-    if (i_mod == 5 & var_name == "lwc")
-      { var_mod<- pmax(var_mod,0)}
-
-    if (i_mod %in% 1:3 & var_name == "lwc")
-      { var_mod<- var_mod*1000}
-    
+    if (i_mod == 6) {var_mod <- var_mod[!is.na(var_mod[,1]),]}
+    if (i_mod == 5 & var_name == "lwc") { var_mod<- pmax(var_mod,0)}
+    if (i_mod %in% 1:3 & var_name == "lwc") { var_mod<- var_mod*1000}
     if (dim(var_mod)[1]>dim(var_mod)[2]) var_mod <- t(var_mod)
     
     time1<-1:dim(var_mod)[2]
     
-    date_mod<-seq(lubridate::dmy_hms(start_time[i_site]),
-      lubridate::dmy_hms(end_time[i_site]),
-      3600*3)
+    date_mod<-seq(start_time[i_site], end_time[i_site], 3600*3)
     
     if (length(date_mod)<length(time1)) {
       var_mod<-var_mod[,- (1:(length(time1)-length(date_mod)))]
       time1  <- time1[- (1:(length(time1)-length(date_mod)))]}
     
     if (length(date_mod)>length(time1)) {
-      print(length(date_mod))
-      print(length(time1))
-      # print(date_mod[length(date_mod)])
       time <- ncvar_get(file_nc_col, varid='time')
       time<- time*3600*24 + as.POSIXct("1900-01-01")
-      # print(time[1])
-      # print(length(time))
-      # print(time[length(time)])
     }
     while (length(date_mod)>length(time1)) {
       time1 <- append(time1, time1[length(time1)]+3600*3)
       var_mod <- cbind(var_mod, var_mod[,length(time1)-1])}
     # some filtering
-    # var_mod<-var_mod[apply(var_mod, 1, Compose(is.finite, all)),]
+    if (i_mod !=3 ){var_mod<-var_mod[apply(var_mod, 1, Compose(is.finite, all)),]}
     # rearranging in xyz array
     ind_select<-seq(1,dim(var_mod)[2],max(1,floor(dim(var_mod)[2]/1000)))
     time_select <- date_mod[ind_select]
     var_mod<-var_mod[,ind_select]
   return(list(time_select, var_mod))
 }
-```
 
-```{r extract_data_therm}
 extract_data_therm <- function (i_site, length_out){
   if(i_site==1) { name_file<-'KANU_PROMICE' }
   if(i_site==2) { name_file<-'DYE-2_long' }
@@ -152,12 +151,17 @@ extract_data_therm <- function (i_site, length_out){
 
 
   time <- Time2Posix("1900-01-01",  time)
+  
+  ind_remove <- c(which(time<start_time[i_site]),  which(time>end_time[i_site]))
+  if (length(ind_remove)>0){
+  depth <- depth[,-ind_remove]
+  T_firn <- T_firn[,-ind_remove]
+  time <- time[-ind_remove]}
+  
   time_ind<-1:length(time)
   TT <- repmat(time_ind,size(T_firn)[1],1)
-  if (i_site == 4){
-    T_firn[,time<"2000-06-01"] = NA
-  }
-  therm_num <- repmat(matrix(1:size(T_firn)[1],nrow=size(T_firn)[1]),1,length(time_ind))
+  if (i_site == 4){ T_firn[,time<"2000-06-01"] = NA }
+  therm_num <- repmat(matrix(1:size(T_firn)[1], nrow=size(T_firn)[1]),1,length(time_ind))
   
   depth_reduced <- depth[,seq(0, length(time_ind), length.out = length_out)]
   dat <- t(rbind(as.vector(TT[,seq(0, length(time_ind), length.out = length_out)]),
@@ -190,59 +194,12 @@ extract_data_therm <- function (i_site, length_out){
 }
 ```
 
-```{r plot_therm_data}
-plot_therm_data <- function (i_site){
-  list_out =   extract_data_therm(i_site,200)
-  dat = list_out[[1]]
-  name_file= list_out[[2]]
-  df= list_out[[3]]
-  time= list_out[[4]]
-  depth_reduced = list_out[[5]]
-  
-  show_box <- list(showline = TRUE,
-      mirror = "ticks",
-      linecolor = toRGB("black"),
-      linewidth = 1)
-    
-  p <- plot_ly(x = time,y=0) %>%
-      layout(xaxis = c(list(title = "Year",
-                          range=c(start_time[i_site],end_time[i_site])),
-                          show_box),
-           yaxis = c(list (title = "Depth (m)", 
-                         range=c(20,0)),
-                     show_box),
-           title=name_file)
-  p <- p %>% add_trace(x = time[df$x], y = df$y,z = df$z, 
-                       colors = rev(hcl.colors(12, "YlOrRd")),  
-                       type = "contour",
-                       colorbar = list(title = list(text = "Firn temperature (°C)",
-                                                    side = "right"),
-                                       len=1,
-                                       range=c(min(dat$z),0))) 
-  p <- p %>% add_trace(x = time[dat$x], y = dat$y, marker = list(size = 1,
-                         color = 'black'), type = "scatter",mode="markers")
-  plotly_IMAGE(p, format = "png", height = 300, width=500, out_file = paste0("Plots/",name_file,"_therm.png"),scale=3)
-  p
-}
-
-```
-
-```{r  plot therm}
-
- plot_therm_data(1)
- plot_therm_data(2)
- plot_therm_data(3)
- plot_therm_data(4)
- plot_therm_data(5)
-```
-
 
 ```{r diff plot}
 
 plot_diff_therm <- function(i_site_in) {
-    #loading observations
-      length_out <-200
-
+  #loading observations
+  length_out <- min(150,floor((end_time[i_site_in]-start_time[i_site_in])/2))
   list_out <- extract_data_therm(i_site_in,length_out)
   dat_obs = list_out[[1]]
   name_file_obs = list_out[[2]]
@@ -259,28 +216,24 @@ plot_diff_therm <- function(i_site_in) {
                                     set_lim=c(-40,0),offset=-273)
     time_mod =list_out[[1]]
     T_mod = list_out[[2]]
-      depth_mod <- t(repmat(t((1:200)/10),size(T_mod)[2],1))
+    depth_mod <- t(repmat(t((1:200)/10),size(T_mod)[2],1))
+  
+    time_ind = repmat( 1:length(time_mod), size(T_mod)[1], 1)
+    dim(time_ind) <- NULL
+  
+    time_mod_flat = time_mod[time_ind]
+    T_mod_flat = T_mod
+    depth_mod_flat <- depth_mod
     
-      time_ind = repmat( 1:length(time_mod), size(T_mod)[1], 1)
-      dim(time_ind) <- NULL
-    
-      time_mod_flat = time_mod[time_ind]
-      T_mod_flat = T_mod
-      depth_mod_flat <- depth_mod
-      
-      dim(depth_mod_flat) <- NULL
-      dim(T_mod_flat) <- NULL
-    
-    
-      V1 = cbind(time_obs[dat_obs$x]  ,dat_obs$y)
-      V2 = cbind((time_mod_flat), (depth_mod_flat))
-      
-    if (i_mod==1){
-      ind <- nn_index(V1,V2)
-    }
-    T_nn_mod <- T_mod_flat[ind]
-    depth_nn_mod <- depth_mod_flat[ind]
-    time_nn_mod <- time_mod_flat[ind]
+    dim(depth_mod_flat) <- NULL
+    dim(T_mod_flat) <- NULL
+  
+    V1 = cbind(time_obs[dat_obs$x]  ,dat_obs$y)
+    V2 = cbind((time_mod_flat), (depth_mod_flat))
+    if (i_mod==1){ ind_closest_to_obs <- nn_index(V1,V2) }
+    T_nn_mod <- T_mod_flat[ind_closest_to_obs]
+    depth_nn_mod <- depth_mod_flat[ind_closest_to_obs]
+    time_nn_mod <- time_mod_flat[ind_closest_to_obs]
     
     ME[i_mod] <- mean(T_nn_mod - dat_obs$z)
     RMSE[i_mod] <- sqrt(mean((T_nn_mod - dat_obs$z)^2))
@@ -291,8 +244,6 @@ plot_diff_therm <- function(i_site_in) {
                 nx=length(seq(0, length(time_ind), length.out = length_out)),
                 ny=50,linear = TRUE, extrap = FALSE)
     df_mod$z <- t(df_mod$z)
-    
-    
     df_diff <- df_obs
     df_diff$z <-  df_mod$z - df_obs$z  
      
@@ -309,99 +260,124 @@ plot_diff_therm <- function(i_site_in) {
     var_mod<-melt(df_diff$z)
     df <- if (i_mod==1) {data.frame(var_mod)} else {cbind(df,var_mod$value)}
     colnames(df)[2+i_mod] <- paste("val",toString(i_mod),sep = "")
+    
+    var_mod<-melt(df_obs$z)
+    df_obs2 <- if (i_mod==1) {data.frame(var_mod)} else {cbind(df_obs2,var_mod$value)}
+    colnames(df_obs2)[2+i_mod] <- paste("val",toString(i_mod),sep = "")
   }
   df$X1<--df_diff$y[df$X1]*10
-  df$date <- time_select[df$X2]
+  df$date <- time_select[df$X2]  
+  df_obs2$X1<--df_obs$y[df_obs2$X1]*10
+  df_obs2$date <- time_select[df_obs2$X2]
   print("Data loaded")
   
-  
   # === plotting ===
+  lims = c(start_time[i_site_in], end_time[i_site_in])
+  x_text <- lims[1] + (lims[2]-lims[1])/2
   print("Plotting...")
-  pList <- lapply(1:length(models), function(i_mod){
+  pList <- lapply(1:9, function(i_mod){
     p <- ggplot(data = df,
           aes_string(x = "date", y = "X1", fill = paste("val",i_mod,sep=""))) +
-        geom_tile()+
-        scale_y_continuous(breaks=c(0,-50,-100,-150,-200),
+      geom_raster()+
+      scale_y_continuous(breaks=c(0,-50,-100,-150,-200),
           labels=c("0", "5", "10","15","20"),
-          expand=c(0.02,0.01),
-          limits= c(-200,0))+
-        scale_x_datetime(expand=c(0.02,0.01), 
+          expand=c(0.02,0.01), limits= c(-200,0))+
+      scale_x_datetime(expand=if (i_site_in==3){ c(0.03,0.03)} else {c(0.02,0.01)}, 
                          labels = if (i_site_in==5 || i_site_in==3){
-                           date_format("%b-%y")} else {date_format("%Y")})+        scale_fill_gradientn(name="Modelled - observed firn temperature (K)",
-          colours = c("blue3","white","red"),
-           values= c(0,0.5,1),
-          na.value = "gray88",
-          limits = c(-15,15)
-          )+
-        annotate('text',x = df$date[floor(length(df$date)/2)], y = -100, 
-          label=paste0("ME = ",
-                       format(ME[i_mod], digits=2, nsmall=2)," K"),
-          size=3.4,   colour = "black")+
-      
-        annotate('text',x = df$date[floor(length(df$date)/2)], y = -125, 
-          label=paste0("RMSE = ",
-                       format(RMSE[i_mod], digits=2, nsmall=2)," K"),
-          size=3.4,   colour = "black")+
-      
-         annotate('text',x = df$date[floor(length(df$date)/2)], y = -155, 
-          label=deparse(bquote(R^2 * " " *  .(sprintf("= %.2f", round(R2[i_mod],2))))),
-          size=3.4,   colour = "black", parse = T)+
-      
-         annotate('text',x = df$date[floor(length(df$date)/2)], y = -185, 
-          label=models[[i_mod]],
-          size=3.4,   colour = "black", fontface="bold")+
-        theme(legend.position = if (i_mod==3) {c(1.1,0.9)} else {"none"},
-          legend.justification = c(0,1),
-          plot.margin=margin(0,10,10,0),
-          axis.title.x = element_blank(),
-          axis.text.x = if (i_mod %in% 7:9) {
-            element_text(angle=45,
-                         margin = margin(t = 4, r = 0, b = 0, l = 0),
-                         hjust=1)} else {element_blank()},
-          axis.title.y = element_blank(),
-          axis.text.y = if (i_mod %in% c(1,4,7)) {element_text()} else {element_blank()},
-          panel.background = element_rect(fill="gray88"),
-          panel.grid.major = element_blank(),
-  panel.grid.minor = element_blank(),
-          axis.line = element_line(colour = "black"),
-          panel.border = element_rect(colour = "black", fill=NA, size=1))
+                           date_format("%b-%y")} else {date_format("%Y")},
+                       limits = lims)+       
+      scale_fill_gradientn(name="Modelled - observed firn temperature (°C)",
+            colours = c("blue3","white","red"), values= c(0,0.5,1),
+            na.value = "gray88", limits = c(-15,15) )+
+      annotate('text',x = x_text, y = -100, 
+            label=paste0("ME = ",
+                         format(ME[i_mod], digits=1, nsmall=1)," °C"),
+            size=3.4,   colour = "black")+
+      annotate('text',x = x_text, y = -125, 
+            label=paste0("RMSE = ",
+                         format(RMSE[i_mod], digits=1, nsmall=1)," °C"),
+            size=3.4,   colour = "black")+
+      annotate('text',x = x_text, y = -155, 
+            label=deparse(bquote(R^2 * " " *  .(sprintf("= %.2f", round(R2[i_mod],2))))),
+            size=3.4,   colour = "black", parse = T)+
+      annotate('text',x = x_text, y = -185, 
+            label=models[[i_mod]],
+            size=3.4,   colour = "black", fontface="bold")+
+      theme(legend.position = if (i_mod==3) {c(1.1,0.9)} else {"none"},
+            legend.justification = c(0,1),
+            plot.margin=margin(0,10,10,0),
+            axis.title.x = element_blank(),
+            axis.text.x = if (i_mod %in% 7:9) {} else {element_blank()}, #element_text(angle=45)
+            axis.title.y = element_blank(),
+            axis.text.y = if (i_mod %in% c(1,4,7)) {element_text()} else {element_blank()},
+            panel.background = element_rect(fill="gray88"),
+            panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            axis.line = element_line(colour = "black"),
+            panel.border = element_rect(colour = "black", fill=NA, size=1))
   })
-  i_seq<-c(3,2,5,1,4)
+
   p_final <- grid.arrange(grobs=pList, nrow=3,
-    top=paste0(letters[i_seq[i_site_in]],') ',sites[[i_site_in]]),
-    left="Depth (m)",
-    bottom="Year",
-    right=" ",
+    top="", left="Depth (m)", bottom="Year", right=" ",
     vp=viewport(x=0, just="left", width=0.8, height=1),
-    heights=unit(c(3,3,4), c("cm","cm", "cm")),
+    heights=unit(c(3.19,3.19,4), c("cm","cm", "cm")),
     widths = c(1.1,1,1))
   print("Saving...")
-  ggsave(filename=paste0("Plots/",sites[[i_site_in]],"_diff_2D.jpg"),
-         plot=p_final,device = "jpeg")
+  ggsave(filename=paste0("Plots/",sites[[i_site_in]],"_temp_diff_2D.jpg"), plot=p_final,device = "jpeg")
+  
+  pList <- lapply(1:9, function(i_mod){
+    p <- ggplot(data = df_obs2,
+          aes_string(x = "date", y = "X1", fill = paste("val",i_mod,sep=""))) +
+      geom_tile()+
+      scale_y_continuous(breaks=c(0,-50,-100,-150,-200),
+          labels=c("0", "5", "10","15","20"),
+          expand=c(0.02,0.01), limits= c(-200,0))+
+      scale_x_datetime(expand=c(0.02,0.03),
+                         labels = if (i_site_in==5 || i_site_in==3){
+                           date_format("%b-%y")} else {date_format("%Y")},
+                       limits = lims)+
+      scale_fill_gradientn(name="Observed firn temperature (°C)",
+            colours = c(brewer.pal(6,"YlOrRd"),"black","black"), values= c(seq(0,0.999,length.out=7),0.999,1),
+            limits=c(-40, 0),
+            na.value = "black" )+
+      annotate('text',x = x_text, y = -185,
+            label=models[[i_mod]],
+            size=3.4,   colour = "black", fontface="bold")+
+      theme(legend.position = if (i_mod==3) {c(1.1,0.9)} else {"none"},
+            legend.justification = c(0,1),
+            plot.margin=margin(0,10,10,0),
+            axis.title.x = element_blank(),
+            axis.text.x = if (i_mod %in% 7:9) {} else {element_blank()}, #element_text(angle=45)
+            axis.title.y = element_blank(),
+            axis.text.y = if (i_mod %in% c(1,4,7)) {element_text()} else {element_blank()},
+            panel.background = element_rect(fill="gray88"),
+            panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            axis.line = element_line(colour = "black"),
+            panel.border = element_rect(colour = "black", fill=NA, size=1))
+  })
+
+  p_final <- grid.arrange(grobs=pList, nrow=3,
+    top="", left="Depth (m)", bottom="Year", right=" ",
+    vp=viewport(x=0, just="left", width=0.8, height=1),
+    heights=unit(c(3.19,3.19,4), c("cm","cm", "cm")),
+    widths = c(1.1,1,1))
+  p_final
+  print("Saving...")
+  ggsave(filename=paste0("Plots/",sites[[i_site_in]],"_temp_obs_2D.jpg"), plot=p_final,device = "jpeg")
 }
-```
-
-``` {r T_firn KAN_U}
- plot_diff_therm(1)
-
-```
-
-``` {r T_firn d2_1}
  plot_diff_therm(2)
 
 ```
 
-``` {r T_firn d2_2}
+
+``` {r T_firn d2_1}
+ plot_diff_therm(1)
+
  plot_diff_therm(3)
 
-```
-
-``` {r T_firn summit}
  plot_diff_therm(4)
 
-```
-
-``` {r T_firn FA}
  plot_diff_therm(5)
 
 ```
@@ -558,27 +534,17 @@ mosaic_plot <- function(i_site){
 
 ``` {r T_firn KAN_U}
 mosaic_plot(1)
-```
-
-``` {r T_firn Dye-2_long}
 mosaic_plot(2)
-```
-
-``` {r T_firn Dye-2_16}
 mosaic_plot(3)
-```
-
-``` {r T_firn Summit}
 mosaic_plot(4)
-```
-
-``` {r T_firn FA}
 mosaic_plot(5)
 ```
-```{r time series density}
+
+```{r time series temperature}
 # loading data
-  # start_time <- as.POSIXct(start_time, format = '%d-%b-%Y %H:%M:%S')
-  # end_time <- as.POSIXct(end_time, format = '%d-%b-%Y %H:%M:%S')
+start_time <- c("01-May-2012 00:00:00","01-Jun-1998 00:00:00","02-May-2016 00:00:00","02-Jul-2000 00:00:00","12-Apr-2014 00:00:00")
+end_time <- c("31-Dec-2016 06:00:00","02-May-2015 15:00:00","28-Oct-2016 09:00:00","08-Mar-2015 12:00:00","02-Dec-2014 21:00:00")
+
 evo_avg_temp <- function (i_site,pal_name){
  
   var_name <- 'temp'
@@ -596,15 +562,13 @@ evo_avg_temp <- function (i_site,pal_name){
     var_mod <- var_mod + offset
     var_mod <- var_mod *multipl_fact
     
-    if (i_mod == 6)
-      {var_mod <- var_mod[!is.na(var_mod[,1]),]}
-    
+    if (i_mod == 6) {var_mod <- var_mod[!is.na(var_mod[,1]),]}
     if (dim(var_mod)[1]>dim(var_mod)[2]) var_mod <- t(var_mod)
     
     time1<-1:dim(var_mod)[2]
     
-    date_mod<-seq(start_time[i_site],
-      end_time[i_site],
+    date_mod<-seq(lubridate::dmy_hms(start_time[i_site]),
+      lubridate::dmy_hms(end_time[i_site]),
       3600*3)
   
     if (length(date_mod)<length(time1)) {
@@ -612,8 +576,6 @@ evo_avg_temp <- function (i_site,pal_name){
       time1  <- time1[- (1:(length(time1)-length(date_mod)))]}
     
     if (length(date_mod)>length(time1)) {
-      print(length(date_mod))
-      print(length(time1))
       time <- ncvar_get(file_nc_col, varid='time')
       time<- time*3600*24 + as.POSIXct("1900-01-01")
     }
@@ -622,10 +584,13 @@ evo_avg_temp <- function (i_site,pal_name){
       time1 <- append(time1, time1[length(time1)]+3600*3)
       var_mod <- cbind(var_mod, var_mod[,length(time1)-1])}
 
-    var_mod_1 = colMeans(var_mod[1:10,])
-    var_mod_2 = colMeans(var_mod[10:100,])
-    var_mod_3 = colMeans(var_mod[100:200,])
-
+    # var_mod_1 = colMeans(var_mod[1:10,])
+    # var_mod_2 = colMeans(var_mod[10:100,])
+    # var_mod_3 = colMeans(var_mod[100:200,])
+    var_mod_1 = (var_mod[10,])
+    var_mod_2 = (var_mod[50,])
+    var_mod_3 = (var_mod[100,])
+    plot(var_mod_2)
     # rearranging in array
     if (i_mod==1) {
       df1 <- data.frame(date_mod,var_mod_1)
@@ -645,121 +610,84 @@ evo_avg_temp <- function (i_site,pal_name){
   }
   
   # Plotting 
-  
-  show_box <- list(showline = TRUE,
-      mirror = "ticks",
-      linecolor = toRGB("black"),
-      linewidth = 2)
-    
-  p1 <- plot_ly(df1, x= ~Date) %>%
-      layout(xaxis = c(list(title = "Date",
-                       range = df1$date_mod[c(1,length(df1$date_mod))]),
-                       show_box),
-           yaxis = c(list (title = "Average temperature (<sup>o</sup>C)"),   
-                     show_box))
-  p2 <- p1
-  p3 <- p1
-
+   num_mod <-9
   get_palette<- colorRampPalette(brewer.pal(brewer.pal.info[ pal_name,1], pal_name))
-  cbp1<-get_palette(9)
+  cbp1<-get_palette(num_mod)
   
-
+  df1_m <- melt(df1,id.vars = 1)
+  df2_m <- melt(df2,id.vars = 1)
+  df3_m <- melt(df3,id.vars = 1)
+  lims=c( as.POSIXct(start_time[i_site],tz = 'UTC', format = '%d-%b-%Y %H:%M:%S'),
+      as.POSIXct(end_time[i_site],tz = 'UTC', format = '%d-%b-%Y %H:%M:%S'))
+  # if (i_site == 4) {lims_y=c(250,600)}  else {lims_y=c(310,900)}
+  lims_y=c(-40, 0)
+plot_dens <- function(df1_m,tit_text){
+  out=list()
+  out[[1]] <- ggplot(data = df1_m, aes(x = date_mod, y = value, color  = variable)) +
+      geom_line(size=1.1) + 
+              guides(color=guide_legend(ncol=3)) +
+      scale_y_continuous(limits = lims_y,expand = c(0, 0.1)) + scale_x_datetime(limits=lims, expand = c(0, 0)) +
+      labs(color="", title = tit_text)+
+      scale_color_manual(values = cbp1)+
+      theme( panel.background = element_blank(), axis.line = element_line(colour = "black"),
+            panel.border = element_rect(colour = "black", fill=NA, size=1),
+            legend.key=element_rect(colour=NA,fill=NA),
+            legend.text= element_text(size=14),
+            text= element_text(size=14),
+            panel.grid.major = element_line(colour="gray50"),
+            plot.margin = unit(c(.1,.1,.1,.1), "cm"),
+            axis.title.x=element_blank(),
+            axis.title.y=element_blank())
+   out[[2]]<-as_ggplot(get_legend(out[[1]]))
+    out[[1]] <- out[[1]] + theme(legend.position = "none")
+   return(out)
+}
   
-  for(i in 2:10){
-    p1 <- p1 %>% add_trace(x = df1$date_mod, y = df1[,i], name = colnames(df1)[i],
-                         type = 'scatter',
-                         mode = 'lines',
-                         line = list(width = 2, color=cbp1[i-1])) %>%
-      layout(yaxis=c(list(
-        range = c( 1.2*min(df1[,2:10])))))
-    p2 <- p2 %>% add_trace(x = df1$date_mod, y = df2[,i], name = colnames(df1)[i],
-                         type = 'scatter',
-                         mode = 'lines',
-                         line = list(width = 2, color=cbp1[i-1]),
-                         showlegend = FALSE)%>%
-      layout(yaxis=c(list(
-        range = c( 1.2*min(df2[,2:10])))))
-    p3 <- p3 %>% add_trace(x = df3$date_mod, y = df3[,i], name = colnames(df1)[i],
-                         type = 'scatter',
-                         mode = 'lines',
-                         line = list(width = 2, color=cbp1[i-1]),
-                         showlegend = FALSE)%>%
-      layout(yaxis=c(list(
-        range = c( 1.2*min(df3[,2:10])))))
-  }
-
-
-if (i_site == 4){ind_l <- c(1,2,3)} 
-  else if (i_site == 2){ ind_l <- c(4,5,6)}
-    else if (i_site == 1) {ind_l <- 7:9}
-
-p1 <- p1 %>% add_trace(data, x =df1$date_mod[100], 
-                       y = 1.1*min(df1[,2:10]),
-                        type = 'scatter',mode = 'text',
-                       textposition = 'middle right',
-             showlegend = FALSE, textfont = list(color = '#000000', size = 16),
-                       text = paste0("<b>",letters[ind_l[1]],") 0-1 m depth<b>"))
-p2 <- p2 %>% add_trace(data, x = df1$date_mod[100], 
-                       y = 1.1*min(df2[,2:10]),
-                       type = 'scatter',mode = 'text', 
-                       textposition = 'middle right',
-             showlegend = FALSE, textfont = list(color = '#000000', size = 16), 
-                       text = paste0("<b>",letters[ind_l[2]],") 1-10 m depth <b>"))
-p3 <- p3 %>% add_trace(data, x = df1$date_mod[100], 
-                       y = 1.1*min(df3[,2:10]),
-                      type = 'scatter',mode = 'text', 
-                      textposition = 'middle right',
-             showlegend = FALSE, textfont = list(color = '#000000', size = 16),
-                      text = paste0("<b>",letters[ind_l[3]],") 10-20 m depth<b>"))
-  
-  PlotList= list(p1,p2,p3)
-  
-  # Removing xticks
-  for (i in c(1,2)){
-      PlotList[[i]] <- PlotList[[i]]%>% 
-         layout(xaxis = list(showticklabels = FALSE))  }
-sites2<-sites
-sites2[1]<-"KAN_U"
-sites2[2]<-"Dye-2"
-    p <- subplot(PlotList, nrows = 3,widths = c(0.5))   %>%
-          layout(title= sites2[[i_site]],
-                 yaxis = list(title=" "),
-                 yaxis2 = list(title="Average firn temperature (<sup>o</sup>C)"),
-                 xaxis = list(title=""),
-                 xaxis3 = list(title="Year"))
-
-df1 <- transform(df1, SD=apply(df1[,2:10],1, sd, na.rm = TRUE))
+# g = list()
+# tmp <- plot_dens(df1_m, "a) 1 m depth") 
+# g[[1]] <- tmp[[2]]
+# g[[2]] <- tmp[[1]]+ theme(axis.text.x=element_blank())
+# 
+# tmp <- plot_dens(df2_m, "b) 5 m depth")  
+# g[[3]] <- tmp[[1]] + 
+#   theme(axis.text.x=element_blank())
+# 
+# tmp <- plot_dens(df3_m, "c) 10 m depth")  
+# g[[4]]<-tmp[[1]]
+# 
+# bot_row <- plot_grid(plotlist=g, align = "v", axis = "lb", ncol=1)
+# h<-grid.arrange(arrangeGrob(bot_row, bottom = textGrob(rot=0,"Year"),
+#                      left = textGrob(rot=90,"Average temperature (°C)")))
+# h
+# ggsave(filename=paste0("Plots/temp_evo_",sites[i_site],".jpg"),
+#              plot=h,device = "jpeg",
+#                       width = 25, height = 25, dpi = 300, units = "cm")
+      
+print(sites[i_site])
+ind <- c(2:10)
+# c(2, 3, 4, 5, 6, 7, 9, 10)
+df1 <- transform(df1, SD=apply(df1[,ind],1, sd, na.rm = TRUE))
+df1 <- transform(df1, avg=apply(df1[,ind],1, mean, na.rm = TRUE))
+print("0-1 m")
 print(max(df1$SD))
-print(mean(df1$SD))
-df2 <- transform(df2, SD=apply(df2[,2:10],1, sd, na.rm = TRUE))
+print(mean(df1$avg))
+df2 <- transform(df2, SD=apply(df2[,ind],1, sd, na.rm = TRUE))
+df2 <- transform(df2, avg=apply(df2[,ind],1, mean, na.rm = TRUE))
+print("1-10 m")
 print(max(df2$SD))
-print(mean(df2$SD))
-df3 <- transform(df3, SD=apply(df3[,2:10],1, sd, na.rm = TRUE))
+print(mean(df2$avg))
+df3 <- transform(df3, SD=apply(df3[,ind],1, sd, na.rm = TRUE))
+df3 <- transform(df3, avg=apply(df3[,ind],1, mean, na.rm = TRUE))
+print("10-20 m")
 print(max(df3$SD))
-print(mean(df3$SD))
+print(mean(df3$avg))
 
-p
-# p1 <-p1 %>%
-#   layout(xaxis=list(title=""),
-#          legend = list(orientation = 'h'))
-# p1
-
-# plotly_IMAGE(p1, format = "png",
-#              out_file = paste0("Plots/density_",sites[i_site],".png"),
-#              width = 500, height = 400, scale=5)
 }
 
-```
 
-``` {r avg t kanu}
 evo_avg_temp(1,"Set1")
-```
 
-``` {r avg t dye2_1}
 evo_avg_temp(2,"Set1")
-```
 
-
-``` {r avg t summit}
 evo_avg_temp(4,"Set1")
 ```

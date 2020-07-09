@@ -87,9 +87,10 @@ data_surf$date <- lubridate::parse_date_time(data_surf$time, orders = "d-b-Y H:M
   rfrz_mod <- rfrz_mod*multipl_fact
   
     if (models[i_mod] %in% c("CFM-Cr","CFM-KM","GEUS")) {rfrz_mod <- rfrz_mod * 1000  }
-    if (strcmp(models[[i_mod]],"IMAUFDM")) {
-  rfrz_mod <- pmax(rfrz_mod,0)}
-  
+    if (strcmp(models[[i_mod]],"IMAUFDM")) {  rfrz_mod <- pmax(rfrz_mod,0)}
+      if (i_mod==7 & i_site==2) { rfrz_mod <- -rfrz_mod
+      rfrz_mod[rfrz_mod>10] <- 10}
+
   # time harmonization
   time1<-1:length(rfrz_mod)
     
@@ -183,9 +184,7 @@ data_surf$date <- lubridate::parse_date_time(data_surf$time, orders = "d-b-Y H:M
 
     # --- plotting ----
     p <- ggplot() + geom_line(data=df_m,
-                aes(x = date, 
-                    y = value,
-                    color=variable,
+                aes(x = date,  y = value, color=variable,
                     linetype=variable,
                     size = variable))+
       scale_linetype_manual(values = c(1,1,1,1,3)) +
@@ -208,16 +207,14 @@ data_surf$date <- lubridate::parse_date_time(data_surf$time, orders = "d-b-Y H:M
             legend.key=element_rect(colour=NA,fill=NA))
   })
   
- h_final<- grid.arrange(grobs=pList, 
-               ncol=3,
-               top=sites[[i_site]], 
-               left= " (mm w.eq.)",
-               bottom="Date",
+ h_final<- grid.arrange(grobs=pList,  ncol=3, top=sites[[i_site]], 
+               left= " (mm w.eq.)", bottom="Date",
                vp=viewport(x=0, just="left", width=0.7, height=1))
  
  ggsave(filename=paste0("Plots/",sites[[i_site]],"_waterbalance.jpg"),
              plot=h_final, device = "jpeg")
 }
+water_balance(i_site=2,  multipl_fact=1)
 
 ```
 
@@ -245,8 +242,6 @@ water_balance(i_site=4,  multipl_fact=1)
 water_balance(i_site=5,  multipl_fact=1)
 
 ```
-
-
 
 
 
