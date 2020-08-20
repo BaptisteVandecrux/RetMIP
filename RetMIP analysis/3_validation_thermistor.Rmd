@@ -288,18 +288,19 @@ plot_diff_therm <- function(i_site_in) {
                        limits = lims)+       
       scale_fill_gradientn(name="Modelled - observed firn temperature (°C)",
             colours = c("blue3","white","red"), values= c(0,0.5,1),
-            na.value = "gray88", limits = c(-15,15) )+
-      annotate('text',x = x_text, y = -100, 
-            label=paste0("ME = ",
-                         format(ME[i_mod], digits=1, nsmall=1)," °C"),
-            size=3.4,   colour = "black")+
+            na.value = "gray70", limits = c(-15,15) )+
+      #annotate('text',x = x_text, y = -100, 
+      #      label=paste0("ME = ",
+      #                   format(ME[i_mod], digits=1, nsmall=1)," °C"),
+      #      size=3.4,   colour = "black")+
       annotate('text',x = x_text, y = -125, 
-            label=paste0("RMSE = ",
-                         format(RMSE[i_mod], digits=1, nsmall=1)," °C"),
-            size=3.4,   colour = "black")+
+            label=paste0("ME = ", format(ME[i_mod], digits=1, nsmall=1)," °C"),
+            size=3,   colour = "black")+
       annotate('text',x = x_text, y = -155, 
-            label=deparse(bquote(R^2 * " " *  .(sprintf("= %.2f", round(R2[i_mod],2))))),
-            size=3.4,   colour = "black", parse = T)+
+            label=paste0("RMSE = ",
+                         format(RMSE[i_mod], digits=1, nsmall=1)," °C  ",
+               "R² = ", format(R2[i_mod], digits=2, nsmall=1)),
+            size=3,   colour = "black")+
       annotate('text',x = x_text, y = -185, 
             label=models[[i_mod]],
             size=3.4,   colour = "black", fontface="bold")+
@@ -310,7 +311,7 @@ plot_diff_therm <- function(i_site_in) {
             axis.text.x = if (i_mod %in% 7:9) {} else {element_blank()}, #element_text(angle=45)
             axis.title.y = element_blank(),
             axis.text.y = if (i_mod %in% c(1,4,7)) {element_text()} else {element_blank()},
-            panel.background = element_rect(fill="gray88"),
+            panel.background = element_rect(fill="gray70"),
             panel.grid.major = element_blank(),
             panel.grid.minor = element_blank(),
             axis.line = element_line(colour = "black"),
@@ -325,46 +326,46 @@ plot_diff_therm <- function(i_site_in) {
   print("Saving...")
   ggsave(filename=paste0("Plots/",sites[[i_site_in]],"_temp_diff_2D.jpg"), plot=p_final,device = "jpeg")
   
-  pList <- lapply(1:9, function(i_mod){
-    p <- ggplot(data = df_obs2,
-          aes_string(x = "date", y = "X1", fill = paste("val",i_mod,sep=""))) +
-      geom_tile()+
-      scale_y_continuous(breaks=c(0,-50,-100,-150,-200),
-          labels=c("0", "5", "10","15","20"),
-          expand=c(0.02,0.01), limits= c(-200,0))+
-      scale_x_datetime(expand=c(0.02,0.03),
-                         labels = if (i_site_in==5 || i_site_in==3){
-                           date_format("%b-%y")} else {date_format("%Y")},
-                       limits = lims)+
-      scale_fill_gradientn(name="Observed firn temperature (°C)",
-            colours = c(brewer.pal(6,"YlOrRd"),"black","black"), values= c(seq(0,0.999,length.out=7),0.999,1),
-            limits=c(-40, 0),
-            na.value = "black" )+
-      annotate('text',x = x_text, y = -185,
-            label=models[[i_mod]],
-            size=3.4,   colour = "black", fontface="bold")+
-      theme(legend.position = if (i_mod==3) {c(1.1,0.9)} else {"none"},
-            legend.justification = c(0,1),
-            plot.margin=margin(0,10,10,0),
-            axis.title.x = element_blank(),
-            axis.text.x = if (i_mod %in% 7:9) {} else {element_blank()}, #element_text(angle=45)
-            axis.title.y = element_blank(),
-            axis.text.y = if (i_mod %in% c(1,4,7)) {element_text()} else {element_blank()},
-            panel.background = element_rect(fill="gray88"),
-            panel.grid.major = element_blank(),
-            panel.grid.minor = element_blank(),
-            axis.line = element_line(colour = "black"),
-            panel.border = element_rect(colour = "black", fill=NA, size=1))
-  })
-
-  p_final <- grid.arrange(grobs=pList, nrow=3,
-    top="", left="Depth (m)", bottom="Year", right=" ",
-    vp=viewport(x=0, just="left", width=0.8, height=1),
-    heights=unit(c(3.19,3.19,4), c("cm","cm", "cm")),
-    widths = c(1.1,1,1))
-  p_final
-  print("Saving...")
-  ggsave(filename=paste0("Plots/",sites[[i_site_in]],"_temp_obs_2D.jpg"), plot=p_final,device = "jpeg")
+  # pList <- lapply(1:9, function(i_mod){
+  #   p <- ggplot(data = df_obs2,
+  #         aes_string(x = "date", y = "X1", fill = paste("val",i_mod,sep=""))) +
+  #     geom_tile()+
+  #     scale_y_continuous(breaks=c(0,-50,-100,-150,-200),
+  #         labels=c("0", "5", "10","15","20"),
+  #         expand=c(0.02,0.01), limits= c(-200,0))+
+  #     scale_x_datetime(expand=c(0.02,0.03),
+  #                        labels = if (i_site_in==5 || i_site_in==3){
+  #                          date_format("%b-%y")} else {date_format("%Y")},
+  #                      limits = lims)+
+  #     scale_fill_gradientn(name="Observed firn temperature (°C)",
+  #           colours = c(brewer.pal(6,"YlOrRd"),"black","black"), values= c(seq(0,0.999,length.out=7),0.999,1),
+  #           limits=c(-40, 0),
+  #           na.value = "black" )+
+  #     annotate('text',x = x_text, y = -185,
+  #           label=models[[i_mod]],
+  #           size=3.4,   colour = "black", fontface="bold")+
+  #     theme(legend.position = if (i_mod==3) {c(1.1,0.9)} else {"none"},
+  #           legend.justification = c(0,1),
+  #           plot.margin=margin(0,10,10,0),
+  #           axis.title.x = element_blank(),
+  #           axis.text.x = if (i_mod %in% 7:9) {} else {element_blank()}, #element_text(angle=45)
+  #           axis.title.y = element_blank(),
+  #           axis.text.y = if (i_mod %in% c(1,4,7)) {element_text()} else {element_blank()},
+  #           panel.background = element_rect(fill="gray88"),
+  #           panel.grid.major = element_blank(),
+  #           panel.grid.minor = element_blank(),
+  #           axis.line = element_line(colour = "black"),
+  #           panel.border = element_rect(colour = "black", fill=NA, size=1))
+  # })
+  # 
+  # p_final <- grid.arrange(grobs=pList, nrow=3,
+  #   top="", left="Depth (m)", bottom="Year", right=" ",
+  #   vp=viewport(x=0, just="left", width=0.8, height=1),
+  #   heights=unit(c(3.19,3.19,4), c("cm","cm", "cm")),
+  #   widths = c(1.1,1,1))
+  # p_final
+  # print("Saving...")
+  # ggsave(filename=paste0("Plots/",sites[[i_site_in]],"_temp_obs_2D.jpg"), plot=p_final,device = "jpeg")
 }
  plot_diff_therm(2)
 

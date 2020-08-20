@@ -62,6 +62,8 @@ Time2Posix <- function (orig_time,  time_in, timez='UTC'){
 # loading data
 
 density_comp <- function (i_site,pal_name){
+  Sys.setlocale("LC_TIME", "English")
+
   info_cores <- read.csv("C:\\Users\\bav\\GitHub\\RetMIP\\Data\\CoreList.csv", sep = ";")
 
   if (i_site == 1){    info_cores <- info_cores[info_cores$NearestCodeLocation == list("KAN-U"), ]  }
@@ -78,7 +80,7 @@ density_comp <- function (i_site,pal_name){
   info_cores <- info_cores[info_cores$Date <= end_time[i_site]+120*3600*24,]
   info_cores <- info_cores[order(info_cores$Date),]
   info_cores <- info_cores[info_cores$DensityAvailable==1,]
-    info_cores <- info_cores[order(info_cores$Date),]
+  info_cores <- info_cores[order(info_cores$Date),]
   info_cores <- info_cores[info_cores$DensityAvailable==1,]
   year_u <- unique(year(info_cores$Date))
   for (i in 1:length(year_u)){
@@ -151,7 +153,7 @@ density_comp <- function (i_site,pal_name){
     
     # Calculating average density for the observation
     info_cores <- info_cores[info_cores$Date>=date_mod[1],]
-    info_cores <- info_cores[info_cores$Date<=date_mod[length(date_mod)]+6*30*24*3600,]
+    info_cores <- info_cores[info_cores$Date<=date_mod[length(date_mod)]+3*30*24*3600,]
     info_cores$avg_dens1 <- NaN*info_cores$CoreNo
     info_cores$avg_dens2 <- NaN*info_cores$CoreNo
     info_cores$avg_dens3 <- NaN*info_cores$CoreNo
@@ -165,22 +167,23 @@ density_comp <- function (i_site,pal_name){
       core_dat <- read.csv(paste0('C:\\Users\\bav\\GitHub\\RetMIP\\Data\\cores\\',core_num,".csv"), sep = ";",header=F)
       core_dat$V2[core_dat$V2<0] <- NaN
       core_dat<-core_dat[core_dat$V1<=2000,]
-      if (length(core_dat$V2)>=100) {info_cores$avg_dens1[i_core] = mean(na.omit(core_dat$V2[1:100]))}
+      if (length(core_dat$V2)>=100) {info_cores$avg_dens1[i_core] = mean(na.omit(core_dat$V2[1:100]))
+      if (sum(is.na(core_dat$V2[1:100]))>60) {info_cores$avg_dens1[i_core] = NaN} }
       if (length(core_dat$V2)>=1000) {info_cores$avg_dens2[i_core] = mean(na.omit(core_dat$V2[101:1000]))}
       if (length(core_dat$V2)>=2000) {info_cores$avg_dens3[i_core] = mean(na.omit(core_dat$V2[1001:2000]))}
     }
   }
   # extracting the firn density profiles
    for (ind_core in 1:length(info_cores$Date)){
+      if (info_cores$CoreNo[ind_core]==197){next}
+      if (info_cores$CoreNo[ind_core]==197){next}
+        
       core_num <- info_cores$CoreNo[ind_core]
       core_date <- info_cores$Date[ind_core]
       core_dat <- read.csv(paste0('C:\\Users\\bav\\GitHub\\RetMIP\\Data\\cores\\',
                                   core_num,".csv"), sep = ";",header=F)
       print(paste(info_cores$Name[ind_core], info_cores$Date[ind_core], core_num))
-      if (max(core_dat$V1)/100<1){ 
-        print('too short')
-        next
-      }
+      if (max(core_dat$V1)/100<1){  print('too short');   next }
       
       core_dat$V2[core_dat$V2<0] <- NaN
       
@@ -241,7 +244,7 @@ density_comp <- function (i_site,pal_name){
           scale_y_continuous(limits = c(250,950), expand = c(0, 0.1)) +
           grids()+coord_flip()+
           labs(x = "Depth (m)",  y =  bquote('Density '~(kg~m^-3)), color="", lty = "",
-               title=paste0(letters[length(my_plots )+4],') ',format(info_cores$Date[ind_core],format = "%d-%b-%Y")))+
+               title=paste0(letters[length(my_plots )+4],') ',format(info_cores$Date[ind_core],format = "%d %B %Y")))+
           scale_color_manual(values = cbp1)+
           theme(panel.background = element_blank(),
                   axis.line = element_line(colour = "black"),
@@ -268,19 +271,20 @@ density_comp <- function (i_site,pal_name){
   df1_m <- melt(df1,id.vars = 1)
   df2_m <- melt(df2,id.vars = 1)
   df3_m <- melt(df3,id.vars = 1)
-  lims=c(start_time[i_site],end_time[i_site]+6*30*24*3600)
-
-  if (i_site == 4) {lims_y=c(250,600)}  else {lims_y=c(310,900)}
-plot_dens <- function(df1_m,info_cores,tit_text){
+  lims= c(min(start_time[i_site], min(info_cores$Date)),max(end_time[i_site], max(info_cores$Date)))
+  wid <- (lims[2]-lims[1])/40/1.5
+  lims[1]<-lims[1]-wid
+  lims[2]<-lims[2]+wid
+plot_dens <- function(df_m,info_cores,tit_text,lims_y){
   out=list()
-  out[[1]] <- ggplot(data = df1_m, aes(x = date_mod, y = value, color  = variable)) +
+  out[[1]] <- ggplot(data = df_m, aes(x = date_mod, y = value, color  = variable)) +
       geom_line(size=1.1) + 
               guides(color=guide_legend(ncol=3)) +
       geom_point(data = info_cores, aes(x =Date, y = avg_dens, color="Observations"),
-                 colour="black",shape="diamond",size=5) +
+                 colour="black",shape="diamond",size=3) +
       geom_errorbar(data = info_cores, aes(x = Date, y = avg_dens,  ymin = avg_dens-40, ymax=avg_dens+40), 
-                    colour = "black", width = (lims[2]-lims[1])/40*24*3600,size = 0.9)+
-      scale_y_continuous(limits = lims_y,expand = c(0, 0.1)) + scale_x_datetime(limits=lims, expand = c(0, 0)) +
+                    colour = "black", width = wid*24*3600*1.5,size = 0.7)+
+      scale_y_continuous(limits = lims_y,expand = c(0, 0.1)) + scale_x_datetime(limits=lims, expand = c(0.01, 0.01)) +
       labs(color="", title = tit_text)+
        grids()+ scale_color_manual(values = cbp1)+
       theme( panel.background = element_blank(), axis.line = element_line(colour = "black"),
@@ -299,23 +303,27 @@ plot_dens <- function(df1_m,info_cores,tit_text){
   
 g = list()
 info_cores$avg_dens <- info_cores$avg_dens1
-tmp <- plot_dens(df1_m,info_cores, "a) 0 - 1 m depth") 
+
+if (i_site == 4) {lims_y=c(250,400)}  else {lims_y=c(310,900)}
+tmp <- plot_dens(df1_m,info_cores, "a) 0 - 1 m depth",lims_y) 
 g[[1]] <- tmp[[2]]
 g[[2]] <- tmp[[1]]+ theme(axis.text.x=element_blank())
+
 info_cores$avg_dens <- info_cores$avg_dens2
-tmp <- plot_dens(df2_m,info_cores, "b) 1 - 10 m depth")  
+if (i_site == 4) {lims_y=c(350,500)}  else {lims_y=c(310,900)}
+tmp <- plot_dens(df2_m,info_cores, "b) 1 - 10 m depth",lims_y)  
 g[[3]] <- tmp[[1]] + 
   theme(axis.text.x=element_blank())
+
 info_cores$avg_dens <- info_cores$avg_dens3
-tmp <- plot_dens(df3_m,info_cores, "c) 10 - 20 m depth")  
+if (i_site == 4) {lims_y=c(450,600)}  else {lims_y=c(310,900)}
+tmp <- plot_dens(df3_m,info_cores, "c) 10 - 20 m depth",lims_y)  
 g[[4]]<-tmp[[1]]
 
-
 top_row <- plot_grid(plotlist=g, align = "h", axis = "l", label_size = 12, ncol=1)
-top_row<-grid.arrange(arrangeGrob(top_row, 
-                                  left =  textGrob(rot=90, 
-                                                   label = expression( paste("Average density (kg ",m^{-3},")                               "))),
-                                  bottom =  textGrob("Year")))
+top_row <- grid.arrange(arrangeGrob(top_row, left =  textGrob(rot=90, 
+                        label = expression( paste("Average density (kg ",m^{-3},")                               "))),
+                        bottom =  textGrob("Year")))
 tmp <- list()
 wd<-c(2)
 for (i in 1:(length(my_plots)-1)){ 
@@ -325,11 +333,12 @@ bot_row <- plot_grid(plotlist=tmp, align = "v", axis = "lb", nrow=1)
 bot_row<-grid.arrange(arrangeGrob(bot_row, left = textGrob(rot=90,"Depth (m)"),
                      bottom =textGrob(rot=0, label = expression( paste("Density (kg ",m^{-3},")")))))
 
-h <-plot_grid(top_row, bot_row, rel_widths = wd,label_size = 12, ncol = 1)
+if (i_site == 4) {num_col=2; dim1=30; dim2=17}  else {num_col=1;dim1=20; dim2=30}
+h <-plot_grid(top_row, bot_row, rel_widths = wd,label_size = 12,ncol=num_col)
 
 ggsave(filename=paste0("Plots/density_evo_",sites[i_site],".jpg"),
              plot=h,device = "jpeg",
-                      width = 30, height = 30, dpi = 300, units = "cm")
+                      width = dim1, height = dim2, dpi = 300, units = "cm")
       
 
 df1 <- transform(df1, SD=apply(df1[,2:10],1, sd, na.rm = TRUE))
@@ -350,7 +359,6 @@ print(mean(df3$avg))
 }
 density_comp(4,"Set1")
 density_comp(1,"Set1")
-
 density_comp(2,"Set1")
 
 ```

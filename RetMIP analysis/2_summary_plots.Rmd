@@ -67,7 +67,7 @@ multi_1D_plot <- function (i_site,i_mod=1:9, set_lim, multipl_fact=1,pal_name='S
     if (ii==7 & i_site==2) { trfrz <- -trfrz
     trfrz[trfrz>10] <- 10}
     
-    if(missing(set_lim)) {set_lim<- c(0,max(trfrz))}
+    # if(missing(set_lim)) {set_lim<- c(0,max(trfrz))}
     
     # reconstructing time
     nc_close(file_nc_val)
@@ -124,10 +124,17 @@ multi_1D_plot <- function (i_site,i_mod=1:9, set_lim, multipl_fact=1,pal_name='S
   df_summary <- transform(df_summary, rfrz_avg=apply(df_rfrz_year[,c(-1,-4)],1, mean, na.rm = TRUE))      
   df_summary <- transform(df_summary, rfrz_2sig=apply(df_rfrz_year[,c(-1,-4)],1, sd, na.rm = TRUE))
   df_summary$rfrz_2sig <- df_summary$rfrz_2sig*2
-  df_summary$rfrz_2sig_pct <- df_summary$rfrz_2sig/df_summary$rfrz_avg*100
+  df_summary <- transform(df_summary, rfrz_avg_pct=apply(df_year[,c(-1,-4)],1, mean, na.rm = TRUE))      
+  df_summary <- transform(df_summary,  rfrz_2sig_pct=apply(df_year[,c(-1,-4)], 1, sd, na.rm = TRUE))
+  df_summary$rfrz_2sig_pct <- df_summary$rfrz_2sig_pct*2
+
   df_summary <- transform(df_summary, runoff_avg=apply(df_runoff_year[,c(-1,-4)],1, mean, na.rm = TRUE))
   df_summary <- transform(df_summary, runoff_2sig=apply(df_runoff_year[,c(-1,-4)],1, sd, na.rm = TRUE))
-  df_summary$runoff_2sig_pct <- df_summary$runoff_2sig/df_summary$runoff_avg*100
+  df_summary$runoff_2sig <- df_summary$runoff_2sig*2
+  df_summary <- transform(df_summary, runoff_avg_pct=apply(100-df_year[,c(-1,-4)],1, mean, na.rm = TRUE))
+  df_summary <- transform(df_summary, runoff_2sig_pct=apply(100-df_year[,c(-1,-4)], 1, sd, na.rm = TRUE))
+  df_summary$runoff_2sig_pct <- df_summary$runoff_2sig_pct*2
+
   print(df_summary)
 
   df_year_m <- melt(df_year,id.vars = 1)
@@ -145,11 +152,12 @@ multi_1D_plot <- function (i_site,i_mod=1:9, set_lim, multipl_fact=1,pal_name='S
     df2$value[which(df2$variable=="DTU")]<-NA
   
     h <- ggplot(data = df2, 
-                    aes(x=factor(year), y = value, colour=variable))+
-              stat_summary(fun = mean, geom = "point",color="black",size=2.5) + 
-              stat_summary(fun.data = mean_2se, geom = "errorbar",color="black",size=1)+
+              aes(x=factor(year), y = value, colour=variable))+
+              stat_summary(fun = mean, geom = "point",shape = 4, stroke=1.5,color="black",size=2.5) + 
+              stat_summary(fun.data = mean_2se, geom = "errorbar",color="black",size=1)+  
               geom_point(data = df, 
-                    aes(x=factor(year), y = value, colour=variable), position=position_jitterdodge(),  size=2,alpha=0.6)+
+                    aes(x=factor(year), y = value, colour=variable), 
+                    shape = 19, position=position_jitterdodge(),  cex=2,alpha=0.9)+
               ggtitle(sites2[[i_site]])+
               labs(x = "Year",  y =  y_lab_text, colour="")+
               scale_fill_manual(values = cbp1)+
@@ -203,8 +211,6 @@ h
 ggsave(filename=paste0("Plots/runoff_rfrz.jpg"),
              plot=h,width = 20, height = 15, units = "cm",device = "jpeg")
 ```
-
-
 
 
 ```{r Percolation depth}
@@ -287,18 +293,18 @@ multipl_fact<-1
   }
 
 pal_name <- "Set1"
-p1 <- plot_ly(df, x = ~time_select) %>%
-    layout(xaxis = list(title = "Year"),
-         yaxis = list (title = "Percolation depth (m)",autorange = "reversed"))
+
 perc_df <- df
 perc_df_m <- melt(df,id.vars = 1)
 lims <- as.POSIXct(strptime(c("2016-05-01 00:00", "2016-10-01 00:00"), 
                    format = "%Y-%m-%d %H:%M"),origin = "1970-01-01")
 
+get_palette<- colorRampPalette(brewer.pal(brewer.pal.info[ pal_name,1], pal_name))
+cbp1<-get_palette(9)
+
 g <- ggplot(data = perc_df_m, aes(x = time_select, y = value, color  = variable)) +
       geom_line(data = d_perc, aes(x = time, y = V2, lty = "Up-GPR"), color = "black", size = 2)+
-    geom_line(size=1,alpha=0.5) + 
-      scale_linetype(guide = FALSE)+
+    geom_line(size=1,alpha=0.9) + 
       scale_y_continuous(trans = "reverse", expand = c(0, 0.1)) +
       scale_x_datetime(date_labels="%b-%y",limits=lims, expand = c(0, 0)) +
   grids()+
@@ -310,13 +316,14 @@ g <- ggplot(data = perc_df_m, aes(x = time_select, y = value, color  = variable)
       theme(panel.background = element_blank(),
               axis.line = element_line(colour = "black"),
               panel.border = element_rect(colour = "black", fill=NA, size=1),
-            legend.key=element_rect(colour=NA,fill=NA)) 
-
+            legend.key=element_rect(colour=NA,fill=NA),
+            legend.title = element_blank(),
+            legend.spacing.x = unit(0.3,"cm")) 
       plot(g)
     
-      ggsave(filename=paste0("Plots/percolation.jpg"),
-             plot=g,device = "jpeg",
-                      width = 20, height = 8, dpi = 300, units = "cm")
+      ggsave(filename="Plots/percolation.jpeg",
+             plot=g,  width = 20, height = 8, dpi = 300, units = "cm")
+
 
 ```
 
