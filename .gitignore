@@ -6,3 +6,5 @@ Plots_save
 *.Rproj
 .Rproj.user
 Plots
+Data
+StatTherm.csv

@@ -16,7 +16,6 @@ always_allow_html: yes
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-library(plotly)
 library(akima)
 library(ncdf4)
 library(ggplot2)
@@ -46,8 +45,7 @@ library(RColorBrewer)
 library(viridis)
 library(grDevices)
 library(cowplot)
-Sys.setenv("plotly_username"="BaptisteV")
-Sys.setenv("plotly_api_key"="Mb6fFibafxWcnixw0pl6")
+
 Sys.setlocale("LC_TIME", "English")
 
 path_model<-'C:/Users/bav/OneDrive - Geological survey of Denmark and Greenland/Data/RetMIP/Model outputs/'
@@ -136,7 +134,7 @@ extract_data_therm <- function (i_site, length_out){
   if(i_site==7) { name_file<-'KANU_SPLAZ_2' }
   if(i_site==7) { name_file<-'KANU_SPLAZ_3' }
 
-  path_file <- paste0('../Data/Firn temperature/T_firn_',name_file,'.nc')
+  path_file <- paste0('Data/Firn temperature/T_firn_',name_file,'.nc')
   file_nc<- nc_open(path_file)
   
   if(i_site==2 || i_site==4) { 
@@ -495,51 +493,6 @@ write("Site;Model;RMSE;ME;R2",file="StatTherm.csv",append=F)
 
 ```
 
-
-``` {r mosaic_plot}
-
-mosaic_plot <- function(i_site){
-
-  PlotList <- list(plot_scatter_therm(1,i_site), plot_scatter_therm(2,i_site),
-                   plot_scatter_therm(3,i_site), plot_scatter_therm(4,i_site),
-                   plot_scatter_therm(5,i_site), plot_scatter_therm(6,i_site),
-                   plot_scatter_therm(7,i_site), plot_scatter_therm(8,i_site),
-                   plot_scatter_therm(9,i_site) )
-  
-  for (i in c(1:6)){
-    PlotList[[i]] <- PlotList[[i]]%>%
-       layout(xaxis = list(showticklabels = FALSE))  }
-  for (i in c(2,3,5,6,8,9)){
-    PlotList[[i]] <- PlotList[[i]]%>%
-       layout(yaxis = list(showticklabels = FALSE))  }
-  for (i in c(1,2,3,4,5,7,8,9)){
-    PlotList[[i]] <- PlotList[[i]] %>% hide_colorbar()  }
-
-  sites_name =sites;
-  sites_name[1] = "KAN_U"
-  new_num = c(4,2,2,1,5)
-  
-  sp <- subplot(PlotList, nrows = 3, widths=c(0.32,0.36,0.32),  
-                shareX = F, shareY = F) %>%
-          layout(xaxis8 = list(title="Year"),
-                 yaxis4 = list(title="Modelled - observed firn temperature (°C)"),
-                 title = paste0(letters[new_num[i_site]],") ",sites_name[[i_site]]))
-  sp
-    plotly_IMAGE(sp, format = "png", autosize = F,
-               out_file = paste0("Plots/scatter_therm_",
-                                 sites[[i_site]],".png"),scale=10)
-}
-
-```
-
-
-``` {r T_firn KAN_U}
-mosaic_plot(1)
-mosaic_plot(2)
-mosaic_plot(3)
-mosaic_plot(4)
-mosaic_plot(5)
-```
 
 ```{r time series temperature}
 # loading data
