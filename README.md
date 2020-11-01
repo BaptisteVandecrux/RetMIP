@@ -1,6 +1,6 @@
 # RetMIP
 
-Here are the scripts used to process the 1D experiment from the firn meltwater Retention Model Intercomparison Project (RetMIP).
+This repository contains the scripts used to process the 1D experiment from the firn meltwater Retention Model Intercomparison Project (RetMIP).
 
 Related publications:
 
